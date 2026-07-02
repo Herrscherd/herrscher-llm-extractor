@@ -82,6 +82,16 @@ func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
 	}
 }
 
+func TestParseCandidates_TitlelessArrayDoesNotMaskReal(t *testing.T) {
+	// A stray empty/title-less array decoding before the real one must not shadow it:
+	// [] decodes empty, [{}] decodes one title-less entry — both are skipped.
+	reply := "Thinking... [] and maybe [{}] but actually:\n" + twoValid
+	cs := parseCandidates(reply, 0.6, 0)
+	if len(cs) != 2 {
+		t.Fatalf("title-less arrays should not mask the real one: want 2, got %d", len(cs))
+	}
+}
+
 func TestParseCandidates_StampsDomainMeta(t *testing.T) {
 	in := `[{"kind":"decision","title":"Has domain","confidence":1,"domain":"dev"},
 	 {"kind":"decision","title":"Blank domain","confidence":1,"domain":"  "}]`

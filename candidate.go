@@ -36,7 +36,7 @@ type rawCandidate struct {
 // and never errors — a garbage reply yields nil so Consolidate stays best-effort.
 func parseCandidates(reply string, threshold float64, max int) []orchestrator.Candidate {
 	var out []orchestrator.Candidate
-	for _, r := range firstCandidateArray(reply) {
+	for _, r := range candidateArray(reply) {
 		title := strings.TrimSpace(r.Title)
 		if title == "" || r.Confidence < threshold {
 			continue
@@ -49,20 +49,26 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 	return out
 }
 
-// firstCandidateArray decodes the first JSON array of candidates in reply. It
-// scans from each '[' and uses a json.Decoder, which reads a single value and
-// ignores trailing text — so an array wrapped in prose still parses even when the
-// surrounding prose contains its own brackets, and a '[' that opens prose rather
-// than JSON is simply skipped. Returns nil when no non-empty candidate array
+// candidateArray decodes the first JSON array in reply that looks like candidates —
+// one with at least one titled element. It scans from each '[' with a json.Decoder,
+// which reads a single value and ignores trailing text, so an array wrapped in prose
+// still parses even when the surrounding prose contains its own brackets. Requiring a
+// titled element means a stray title-less array such as `[]` or `[{}]` appearing in
+// the prose before the real one no longer masks it. Returns nil when no such array
 // decodes, keeping Consolidate best-effort on garbage or truncated replies.
-func firstCandidateArray(reply string) []rawCandidate {
+func candidateArray(reply string) []rawCandidate {
 	for i := 0; i < len(reply); i++ {
 		if reply[i] != '[' {
 			continue
 		}
 		var raws []rawCandidate
-		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err == nil && len(raws) > 0 {
-			return raws
+		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err != nil {
+			continue
+		}
+		for _, r := range raws {
+			if strings.TrimSpace(r.Title) != "" {
+				return raws
+			}
 		}
 	}
 	return nil
