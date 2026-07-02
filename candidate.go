@@ -30,21 +30,13 @@ type rawCandidate struct {
 	Confidence float64   `json:"confidence"`
 }
 
-// parseCandidates tolerantly turns a model reply into candidates: it extracts the
-// JSON array (ignoring any prose or code-fence wrapper), drops entries with no
-// title or below threshold, caps the result at max (0 = uncapped), and never
-// errors — a garbage reply yields nil so Consolidate stays best-effort.
+// parseCandidates tolerantly turns a model reply into candidates: it decodes the
+// first embedded JSON array (ignoring any prose or code-fence wrapper), drops
+// entries with no title or below threshold, caps the result at max (0 = uncapped),
+// and never errors — a garbage reply yields nil so Consolidate stays best-effort.
 func parseCandidates(reply string, threshold float64, max int) []orchestrator.Candidate {
-	arr := extractJSONArray(reply)
-	if arr == "" {
-		return nil
-	}
-	var raws []rawCandidate
-	if err := json.Unmarshal([]byte(arr), &raws); err != nil {
-		return nil
-	}
 	var out []orchestrator.Candidate
-	for _, r := range raws {
+	for _, r := range firstCandidateArray(reply) {
 		title := strings.TrimSpace(r.Title)
 		if title == "" || r.Confidence < threshold {
 			continue
@@ -57,15 +49,23 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 	return out
 }
 
-// extractJSONArray returns the substring from the first '[' to the last ']'
-// inclusive, so a fenced or prose-wrapped array still parses. Empty when absent.
-func extractJSONArray(s string) string {
-	i := strings.IndexByte(s, '[')
-	j := strings.LastIndexByte(s, ']')
-	if i < 0 || j < i {
-		return ""
+// firstCandidateArray decodes the first JSON array of candidates in reply. It
+// scans from each '[' and uses a json.Decoder, which reads a single value and
+// ignores trailing text — so an array wrapped in prose still parses even when the
+// surrounding prose contains its own brackets, and a '[' that opens prose rather
+// than JSON is simply skipped. Returns nil when no non-empty candidate array
+// decodes, keeping Consolidate best-effort on garbage or truncated replies.
+func firstCandidateArray(reply string) []rawCandidate {
+	for i := 0; i < len(reply); i++ {
+		if reply[i] != '[' {
+			continue
+		}
+		var raws []rawCandidate
+		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err == nil && len(raws) > 0 {
+			return raws
+		}
 	}
-	return s[i : j+1]
+	return nil
 }
 
 func toNode(r rawCandidate, title string) contracts.Node {

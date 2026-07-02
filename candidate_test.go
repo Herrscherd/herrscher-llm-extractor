@@ -65,6 +65,36 @@ func TestParseCandidates_TolerantOfWrapperAndGarbage(t *testing.T) {
 	if got := parseCandidates(`[{"title":"","confidence":1}]`, 0.6, 0); got != nil {
 		t.Fatalf("empty title: want nil, got %v", got)
 	}
+	if got := parseCandidates("[ {kind: decision, title: x} ]", 0.6, 0); got != nil {
+		t.Fatalf("bracketed-but-invalid array: want nil, got %v", got)
+	}
+	if got := parseCandidates(`[{"title":"x"`, 0.6, 0); got != nil {
+		t.Fatalf("truncated array: want nil, got %v", got)
+	}
+}
+
+func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
+	// A valid array wrapped in prose that itself contains brackets must still extract.
+	reply := "Here are the facts [as requested]:\n" + twoValid + "\nHope this helps ]"
+	cs := parseCandidates(reply, 0.6, 0)
+	if len(cs) != 2 {
+		t.Fatalf("bracketed-prose wrapper: want 2 candidates, got %d", len(cs))
+	}
+}
+
+func TestParseCandidates_StampsDomainMeta(t *testing.T) {
+	in := `[{"kind":"decision","title":"Has domain","confidence":1,"domain":"dev"},
+	 {"kind":"decision","title":"Blank domain","confidence":1,"domain":"  "}]`
+	cs := parseCandidates(in, 0.6, 0)
+	if len(cs) != 2 {
+		t.Fatalf("want 2, got %d", len(cs))
+	}
+	if cs[0].Node.Meta["domain"] != "dev" {
+		t.Fatalf("domain meta not stamped: %v", cs[0].Node.Meta)
+	}
+	if _, ok := cs[1].Node.Meta["domain"]; ok {
+		t.Fatalf("whitespace-only domain should be skipped: %v", cs[1].Node.Meta)
+	}
 }
 
 func TestParseCandidates_NormalizesLinks(t *testing.T) {
