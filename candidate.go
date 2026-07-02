@@ -2,6 +2,8 @@ package llmextractor
 
 import (
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"strings"
 
 	"github.com/Herrscherd/herrscher-contracts"
@@ -76,14 +78,15 @@ func toNode(r rawCandidate, title string) contracts.Node {
 	}
 	var links []contracts.Link
 	for _, l := range r.Links {
-		if strings.TrimSpace(l.To) == "" {
+		to := strings.TrimSpace(l.To)
+		if to == "" {
 			continue
 		}
-		rel := l.Rel
+		rel := strings.TrimSpace(l.Rel)
 		if rel == "" {
 			rel = contracts.RelAppliesTo
 		}
-		links = append(links, contracts.Link{To: l.To, Rel: rel})
+		links = append(links, contracts.Link{To: to, Rel: rel})
 	}
 	kind := mapKind(r.Kind)
 	return contracts.Node{
@@ -133,7 +136,20 @@ func stableKey(kind contracts.NodeKind, title string, private bool) string {
 	if private {
 		prefix = "skills"
 	}
-	return prefix + "/" + slug(title)
+	return prefix + "/" + slugOrHash(title)
+}
+
+// slugOrHash returns the readable slug of title, or a deterministic hash fallback
+// when the title has no [a-z0-9] runes (non-ASCII or punctuation-only). Without
+// the fallback such titles slug to "" and each collides on a degenerate key like
+// "facts/decision/", silently overwriting distinct facts on upsert.
+func slugOrHash(title string) string {
+	if s := slug(title); s != "" {
+		return s
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(title)))
+	return fmt.Sprintf("n%08x", h.Sum32())
 }
 
 // slug lowercases title and keeps [a-z0-9], collapsing every other run into a

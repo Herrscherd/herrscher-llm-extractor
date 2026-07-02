@@ -1,6 +1,7 @@
 package llmextractor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Herrscherd/herrscher-contracts"
@@ -63,6 +64,52 @@ func TestParseCandidates_TolerantOfWrapperAndGarbage(t *testing.T) {
 	}
 	if got := parseCandidates(`[{"title":"","confidence":1}]`, 0.6, 0); got != nil {
 		t.Fatalf("empty title: want nil, got %v", got)
+	}
+}
+
+func TestParseCandidates_NormalizesLinks(t *testing.T) {
+	in := `[{"kind":"decision","title":"Linked","confidence":1,"links":[
+	 {"to":"projects/x/index"},
+	 {"to":"","rel":"contains"},
+	 {"to":"y","rel":"relates-to"},
+	 {"to":"  z  ","rel":"  "}]}]`
+	cs := parseCandidates(in, 0.6, 0)
+	if len(cs) != 1 {
+		t.Fatalf("want 1 candidate, got %d", len(cs))
+	}
+	links := cs[0].Node.Links
+	if len(links) != 3 {
+		t.Fatalf("want 3 links (empty-To dropped), got %d", len(links))
+	}
+	if links[0].To != "projects/x/index" || links[0].Rel != contracts.RelAppliesTo {
+		t.Fatalf("default rel not applied: %+v", links[0])
+	}
+	if links[1].To != "y" || links[1].Rel != "relates-to" {
+		t.Fatalf("explicit rel not preserved: %+v", links[1])
+	}
+	if links[2].To != "z" || links[2].Rel != contracts.RelAppliesTo {
+		t.Fatalf("whitespace not trimmed / rel default: %+v", links[2])
+	}
+}
+
+func TestStableKey_NonSluggableTitlesGetDistinctKeys(t *testing.T) {
+	in := `[{"kind":"decision","title":"決定事項","confidence":1},
+	 {"kind":"decision","title":"日本語","confidence":1},
+	 {"kind":"decision","title":"!!!","confidence":1}]`
+	cs := parseCandidates(in, 0.6, 0)
+	if len(cs) != 3 {
+		t.Fatalf("want 3, got %d", len(cs))
+	}
+	seen := map[string]bool{}
+	for _, c := range cs {
+		k := c.Node.Key
+		if strings.HasSuffix(k, "/") {
+			t.Fatalf("degenerate key with empty slug: %q", k)
+		}
+		if seen[k] {
+			t.Fatalf("colliding key for distinct title: %q", k)
+		}
+		seen[k] = true
 	}
 }
 

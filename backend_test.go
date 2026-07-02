@@ -68,3 +68,31 @@ func TestBackendFrom_NoBackendRegisteredIsNoOp(t *testing.T) {
 		t.Fatalf("want (nil,nil), got (%v,%v)", b, err)
 	}
 }
+
+func TestBackendFrom_SkipsPluginsWithoutBackendFactory(t *testing.T) {
+	built := &fakeBackend{}
+	plugins := []contracts.Plugin{
+		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}}, // no Backend factory
+		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}, Backend: func(_ context.Context, _ contracts.PluginConfig) (contracts.Backend, error) {
+			return built, nil
+		}},
+	}
+	b, err := backendFrom(plugins, func(string) string { return "" })
+	if err != nil || b != built {
+		t.Fatalf("want built backend via skip, got (%v,%v)", b, err)
+	}
+}
+
+func TestBackendFrom_ResolveErrorPropagates(t *testing.T) {
+	plugins := []contracts.Plugin{
+		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend, Config: []contracts.Setting{
+			{Key: "model", Env: "CLAUDE_MODEL", Required: true},
+		}}, Backend: func(_ context.Context, _ contracts.PluginConfig) (contracts.Backend, error) {
+			return &fakeBackend{}, nil
+		}},
+	}
+	b, err := backendFrom(plugins, func(string) string { return "" }) // required env unset → Resolve error
+	if err == nil || b != nil {
+		t.Fatalf("want (nil, error) on unresolved required setting, got (%v,%v)", b, err)
+	}
+}

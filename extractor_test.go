@@ -3,6 +3,7 @@ package llmextractor
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestExtract_HappyPath(t *testing.T) {
 	if len(cs) != 2 {
 		t.Fatalf("want 2, got %d", len(cs))
 	}
-	if !contains(fb.got.Content, "transcript") {
+	if !strings.Contains(fb.got.Content, "transcript") {
 		t.Fatal("transcript not passed to backend")
 	}
 }
