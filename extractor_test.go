@@ -3,6 +3,7 @@ package llmextractor
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/Herrscherd/herrscher-contracts"
@@ -10,6 +11,7 @@ import (
 )
 
 type fakeBackend struct {
+	mu     sync.Mutex
 	reply  string
 	err    error
 	got    contracts.Prompt
@@ -17,11 +19,18 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, _ func(contracts.BackendEvent)) (string, error) {
+	f.mu.Lock()
 	f.got = p
+	f.mu.Unlock()
 	return f.reply, f.err
 }
 
-func (f *fakeBackend) Close() error { f.closed = true; return nil }
+func (f *fakeBackend) Close() error {
+	f.mu.Lock()
+	f.closed = true
+	f.mu.Unlock()
+	return nil
+}
 
 // compile-time proof the type satisfies the seam.
 var _ orchestrator.Extractor = (*LLMExtractor)(nil)
@@ -74,4 +83,23 @@ func TestOptions_ThresholdAndMax(t *testing.T) {
 	if len(cs) != 1 {
 		t.Fatalf("threshold via Extract: want 1, got %d", len(cs))
 	}
+}
+
+func TestExtract_ConcurrentLazyInitIsRaceFree(t *testing.T) {
+	e := &LLMExtractor{
+		newBackend: func() (contracts.Backend, error) { return &fakeBackend{reply: twoValid}, nil },
+		threshold:  defaultThreshold,
+		max:        defaultMax,
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := e.Extract(context.Background(), "j", "t"); err != nil {
+				t.Errorf("Extract: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }

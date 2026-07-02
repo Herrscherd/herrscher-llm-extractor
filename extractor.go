@@ -57,15 +57,16 @@ func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) 
 	return parseCandidates(raw, e.threshold, e.max), nil
 }
 
-// resolveBackend returns the injected backend, or lazily builds one from
-// newBackend exactly once. A build error leaves the backend nil (no-op degrade).
+// resolveBackend returns the backend, building it lazily exactly once when a
+// lazy source is set. A build error leaves the backend nil (no-op degrade).
 func (e *LLMExtractor) resolveBackend() contracts.Backend {
-	if e.backend != nil {
+	// Injected via New(): the field is set at construction and never mutated,
+	// so this read needs no synchronization.
+	if e.newBackend == nil {
 		return e.backend
 	}
-	if e.newBackend == nil {
-		return nil
-	}
+	// Lazy: every caller goes through once.Do, whose internal barrier serializes
+	// the write below and the subsequent read across concurrent sessions.
 	e.once.Do(func() {
 		if b, err := e.newBackend(); err == nil {
 			e.backend = b

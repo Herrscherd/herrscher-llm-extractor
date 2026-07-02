@@ -23,14 +23,14 @@ func extractionPrompt(journal, transcript string) contracts.Prompt {
 const instructions = `You are herrscher's memory curator. From the work below,
 distill only what is worth remembering for future sessions. Return ONLY a JSON array (no prose, no code fence) of candidate memory nodes:
 
-[{"kind":"decision|architecture|user|production|session",
+[{"kind":"decision|architecture|user|production|organization|project|repo|server|agent|domain|session",
   "title":"short stable title",
   "body":"the fact in markdown; for a decision add **Why:** and **How to apply:**",
   "domain":"dev",
   "tags":["nats","transport"],
   "links":[{"to":"projects/x/index","rel":"applies-to"}],
   "private":false,
-  "confidence":0.0}]
+  "confidence":0.9}]
 
 Rules:
 - One durable fact per element; concise, stable titles.
