@@ -35,8 +35,13 @@ type rawCandidate struct {
 // entries with no title or below threshold, caps the result at max (0 = uncapped),
 // and never errors — a garbage reply yields nil so Consolidate stays best-effort.
 func parseCandidates(reply string, threshold float64, max int) []orchestrator.Candidate {
-	var out []orchestrator.Candidate
-	for _, r := range candidateArray(reply) {
+	raws := candidateArray(reply)
+	n := len(raws)
+	if max > 0 && max < n {
+		n = max
+	}
+	out := make([]orchestrator.Candidate, 0, n)
+	for _, r := range raws {
 		title := strings.TrimSpace(r.Title)
 		if title == "" || r.Confidence < threshold {
 			continue
@@ -45,6 +50,9 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 		if max > 0 && len(out) >= max {
 			break
 		}
+	}
+	if len(out) == 0 {
+		return nil // keep the documented nil-on-garbage contract, not a 0-len slice
 	}
 	return out
 }
@@ -105,33 +113,30 @@ func toNode(r rawCandidate, title string) contracts.Node {
 	}
 }
 
+// allowedKinds is the set of NodeKinds the model may name directly; anything else
+// (including blank) falls through to KindSession. Kept as one table so adding a
+// contracts.NodeKind is a single-line change rather than a new switch arm.
+var allowedKinds = map[contracts.NodeKind]bool{
+	contracts.KindOrganization: true,
+	contracts.KindProject:      true,
+	contracts.KindRepo:         true,
+	contracts.KindServer:       true,
+	contracts.KindArchitecture: true,
+	contracts.KindProduction:   true,
+	contracts.KindDecision:     true,
+	contracts.KindUser:         true,
+	contracts.KindAgent:        true,
+	contracts.KindDomain:       true,
+}
+
 // mapKind maps the model's kind string to a NodeKind, defaulting unknown or blank
 // to KindSession (transient) rather than dropping the candidate.
 func mapKind(s string) contracts.NodeKind {
-	switch contracts.NodeKind(strings.ToLower(strings.TrimSpace(s))) {
-	case contracts.KindOrganization:
-		return contracts.KindOrganization
-	case contracts.KindProject:
-		return contracts.KindProject
-	case contracts.KindRepo:
-		return contracts.KindRepo
-	case contracts.KindServer:
-		return contracts.KindServer
-	case contracts.KindArchitecture:
-		return contracts.KindArchitecture
-	case contracts.KindProduction:
-		return contracts.KindProduction
-	case contracts.KindDecision:
-		return contracts.KindDecision
-	case contracts.KindUser:
-		return contracts.KindUser
-	case contracts.KindAgent:
-		return contracts.KindAgent
-	case contracts.KindDomain:
-		return contracts.KindDomain
-	default:
-		return contracts.KindSession
+	k := contracts.NodeKind(strings.ToLower(strings.TrimSpace(s)))
+	if allowedKinds[k] {
+		return k
 	}
+	return contracts.KindSession
 }
 
 // stableKey derives a deterministic Key so the same fact re-extracted in a later
