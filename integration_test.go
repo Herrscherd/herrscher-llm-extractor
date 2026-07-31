@@ -40,6 +40,19 @@ func (m *memStub) Links(_ context.Context, from, to, rel string) error {
 	m.links = append(m.links, [3]string{from, to, rel})
 	return nil
 }
+
+// Unlink is the inverse of Links: identity is the (from, to) pair — no rel — so
+// every relation targeting `to` goes. Idempotent, an absent edge is not an error.
+func (m *memStub) Unlink(_ context.Context, from, to string) error {
+	kept := m.links[:0]
+	for _, l := range m.links {
+		if l[0] != from || l[1] != to {
+			kept = append(kept, l)
+		}
+	}
+	m.links = kept
+	return nil
+}
 func (m *memStub) Close() error { return nil }
 
 func TestLearnerConsolidate_RecordsScopedNodes(t *testing.T) {
