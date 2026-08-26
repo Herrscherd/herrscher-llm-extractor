@@ -1,27 +1,31 @@
 # herrscher-llm-extractor
 
 **The open, reference memory curator.** A generic, LLM-driven
-`orchestrator.Extractor`: it turns a session's call journal and transcript into
-durable memory nodes — shared **facts** (under the project) and private
-**skills** (under the agent) — so herrscher self-populates its vault. It is not
-the nudge loop: the every-N-turns `Consolidate` is owned by the orchestrator,
-which calls this extractor. The Roblox-specific curation heuristics are a
-separate, **closed** extractor; this is the reusable default that ships in the open.
+`orchestrator.Extractor`. It turns a session's call journal and transcript into
+durable memory nodes: shared **facts** under the project, and private **skills**
+under the agent. That is how herrscher self-populates its vault.
 
-## Role · Category · Ports · Config · Status · Repo
+It is not the nudge loop. The every-N-turns `Consolidate` is owned by the
+orchestrator, which calls this extractor.
 
-| Aspect | Value |
-|--------|-------|
-| **Role** | Distills a session's journal and transcript into memory candidates |
-| **Category** | Library (orchestrator extension — it registers no `contracts.Plugin`) |
-| **Registered as** | `orchestrator.RegisterExtractor("llm", …)` — selected with `--extractor llm` |
-| **Ports implemented** | `orchestrator.Extractor` (`Extract(ctx, journal, transcript) ([]orchestrator.Candidate, error)`) |
-| **Ports consumed** | `contracts.Backend` — the first backend plugin in `contracts.Default.Backends()`, built lazily on first `Extract` |
-| **Config & env** | `HERRSCHER_CURATION_MODEL` (optional) — overrides *any* env key ending in `MODEL` that the registered backend reads, so curation runs on a cheaper model than the conversation. Every other key of that backend's own manifest config (API keys, endpoints) is read unchanged from the process env |
-| **Code-level tuning** | `New(backend, WithThreshold(f), WithMax(n))` — confidence threshold (default `0.6`) and candidates kept per pass (default `8`). No env equivalent |
-| **Dependencies** | contracts `v0.1.9`, orchestrator `v0.1.4` |
-| **Status** | live |
-| **Repo** | [herrscher-llm-extractor](https://github.com/Herrscherd/herrscher-llm-extractor) |
+Domain-specific curation heuristics live in separate, closed extractors. This is
+the reusable default that ships in the open.
+
+Status: live.
+
+## What it is, in the plugin model
+
+It is a library rather than a plugin: it registers no `contracts.Plugin`, it
+extends the orchestrator.
+
+It registers itself as `orchestrator.RegisterExtractor("llm", …)`, so a session
+selects it with `--extractor llm`.
+
+It implements `orchestrator.Extractor`, which is
+`Extract(ctx, journal, transcript) ([]orchestrator.Candidate, error)`.
+
+It consumes `contracts.Backend`: the first backend plugin in
+`contracts.Default.Backends()`, built lazily on the first `Extract`.
 
 ## Install
 
@@ -29,7 +33,7 @@ separate, **closed** extractor; this is the reusable default that ships in the o
 herrscher plugin add github.com/Herrscherd/herrscher-llm-extractor
 ```
 
-Blank-import the package into a herrscher host (xcaddy pattern):
+Blank-import the package into a herrscher host, the xcaddy pattern:
 
 ```go
 import _ "github.com/Herrscherd/herrscher-llm-extractor"
@@ -41,27 +45,43 @@ Then opt a session into auto-capture:
 session create --extractor llm --journal <worktree>/.neublox/calls.log --consolidate-every 10
 ```
 
+## Configuration
+
+`HERRSCHER_CURATION_MODEL` is optional. It overrides *any* env key ending in
+`MODEL` that the registered backend reads, so curation can run on a cheaper model
+than the conversation does. Every other key of that backend's own manifest config
+(API keys, endpoints) is read unchanged from the process environment.
+
+Two knobs have no environment equivalent and are set in code:
+`New(backend, WithThreshold(f), WithMax(n))`. The confidence threshold defaults to
+`0.6`, and the number of candidates kept per pass defaults to `8`.
+
 ## What it writes
 
-Each candidate becomes a `contracts.Node` with a **stable Key** —
-`facts/<kind>/<slug>` for shared facts, `skills/<slug>` for agent-private ones —
-so re-extraction upserts instead of duplicating. Titles that slug to nothing fall
+Each candidate becomes a `contracts.Node` with a **stable key**:
+`facts/<kind>/<slug>` for shared facts, `skills/<slug>` for agent-private ones. So
+re-extraction upserts instead of duplicating. A title that slugs to nothing falls
 back to a deterministic FNV hash rather than colliding on an empty key.
-`Meta["capturedBy"]="llm-extractor"` marks every node for human audit and
-pruning; `domain` and `tags` are carried through when the model supplies them. A
-kind outside the allowed set degrades to `session` instead of dropping the
-candidate.
+
+`Meta["capturedBy"]="llm-extractor"` marks every node for human audit and pruning.
+`domain` and `tags` are carried through when the model supplies them. A kind
+outside the allowed set degrades to `session` instead of dropping the candidate.
 
 ## Failure behaviour
 
-Extraction is best-effort and never breaks a session: no registered backend,
+Extraction is best-effort and never breaks a session. No registered backend, an
 empty journal *and* transcript, a backend build error, or a malformed JSON reply
-all yield zero candidates without an error. Journal and transcript are fenced
-between a per-call random sentinel and declared untrusted, so instructions
-embedded in captured output cannot hijack the curation prompt.
+all yield zero candidates and no error.
+
+The journal and the transcript are fenced between a per-call random sentinel and
+declared untrusted, so instructions embedded in captured output cannot hijack the
+curation prompt.
 
 ## Further reading
 
-- [Herrscher docs](https://github.com/Herrscherd/herrscher-docs) — `architecture/learning`
-- [contracts](https://github.com/Herrscherd/herrscher-contracts) — port signatures
-- [orchestrator](https://github.com/Herrscherd/herrscher-orchestrator) — the `Learner` that drives this extractor
+- [Herrscher docs](https://github.com/Herrscherd/herrscher-docs), page
+  `architecture/learning`
+- [contracts](https://github.com/Herrscherd/herrscher-contracts), for the port
+  signatures
+- [orchestrator](https://github.com/Herrscherd/herrscher-orchestrator), the
+  `Learner` that drives this extractor
