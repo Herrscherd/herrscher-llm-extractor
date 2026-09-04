@@ -2,6 +2,8 @@ package llmextractor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -15,8 +17,10 @@ import (
 // first use (the registered default — see register.go / backend.go).
 type LLMExtractor struct {
 	backend    contracts.Backend
-	newBackend func() (contracts.Backend, error) // lazy source when backend is nil
-	once       sync.Once
+	newBackend func(context.Context) (contracts.Backend, error)
+	mu         sync.Mutex
+	built      bool
+	backendErr error
 	threshold  float64
 	max        int
 }
@@ -46,31 +50,50 @@ func New(b contracts.Backend, opts ...Option) *LLMExtractor {
 // candidates. It is best-effort: no backend or empty inputs yield a clean no-op;
 // a bad JSON reply yields no candidates without erroring.
 func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) ([]orchestrator.Candidate, error) {
-	b := e.resolveBackend()
-	if b == nil || (strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "") {
+	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
+		return nil, nil
+	}
+	b := e.resolveBackend(ctx)
+	if b == nil {
 		return nil, nil
 	}
 	raw, err := b.Respond(ctx, extractionPrompt(journal, transcript), nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("llmextractor: curation respond: %w", err)
 	}
 	return parseCandidates(raw, e.threshold, e.max), nil
 }
 
-// resolveBackend returns the backend, building it lazily exactly once when a
-// lazy source is set. A build error leaves the backend nil (no-op degrade).
-func (e *LLMExtractor) resolveBackend() contracts.Backend {
-	// Injected via New(): the field is set at construction and never mutated,
-	// so this read needs no synchronization.
+func (e *LLMExtractor) BackendErr() error {
+	if e.newBackend == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.backendErr == nil {
+		return nil
+	}
+	return fmt.Errorf("llmextractor: build curation backend: %w", e.backendErr)
+}
+
+func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 	if e.newBackend == nil {
 		return e.backend
 	}
-	// Lazy: every caller goes through once.Do, whose internal barrier serializes
-	// the write below and the subsequent read across concurrent sessions.
-	e.once.Do(func() {
-		if b, err := e.newBackend(); err == nil {
-			e.backend = b
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.built {
+		return e.backend
+	}
+	b, err := e.newBackend(ctx)
+	e.backendErr = err
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil
 		}
-	})
+		e.built = true
+		return nil
+	}
+	e.backend, e.built = b, true
 	return e.backend
 }

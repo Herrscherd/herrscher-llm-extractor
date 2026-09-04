@@ -14,6 +14,11 @@ import (
 // prune what the extractor wrote.
 const capturedBy = "llm-extractor"
 
+const (
+	maxCandidateScan     = 1 << 20
+	maxCandidateAttempts = 64
+)
+
 type rawLink struct {
 	To  string `json:"to"`
 	Rel string `json:"rel"`
@@ -65,10 +70,18 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 // the prose before the real one no longer masks it. Returns nil when no such array
 // decodes, keeping Consolidate best-effort on garbage or truncated replies.
 func candidateArray(reply string) []rawCandidate {
+	if len(reply) > maxCandidateScan {
+		reply = reply[:maxCandidateScan]
+	}
+	attempts := 0
 	for i := 0; i < len(reply); i++ {
 		if reply[i] != '[' {
 			continue
 		}
+		if attempts >= maxCandidateAttempts {
+			return nil
+		}
+		attempts++
 		var raws []rawCandidate
 		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err != nil {
 			continue

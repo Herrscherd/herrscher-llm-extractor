@@ -3,6 +3,7 @@ package llmextractor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Herrscherd/herrscher-contracts"
 )
@@ -159,5 +160,29 @@ func TestMapKind_UnknownFallsBackToSession(t *testing.T) {
 	}
 	if mapKind("wibble") != contracts.KindSession {
 		t.Fatal("unknown kind should fall back to session")
+	}
+}
+
+func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply string
+	}{
+		{name: "deeply nested brackets", reply: strings.Repeat("[", 200000)},
+		{name: "many array starts", reply: strings.Repeat("[x", 100000)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			done := make(chan []rawCandidate, 1)
+			go func() { done <- candidateArray(tc.reply) }()
+			select {
+			case got := <-done:
+				if got != nil {
+					t.Fatalf("want nil on garbage, got %v", got)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("candidateArray did not return in bounded time")
+			}
+		})
 	}
 }
