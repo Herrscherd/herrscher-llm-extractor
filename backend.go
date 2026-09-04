@@ -27,7 +27,7 @@ func curationEnv(base func(string) string) func(string) string {
 // config, mirroring the host's firstBackend (Resolve(manifest.Config, getenv) →
 // factory). Returns (nil, nil) when no backend plugin is registered, so curation
 // degrades to a clean no-op and recall keeps working.
-func backendFrom(plugins []contracts.Plugin, getenv func(string) string) (contracts.Backend, error) {
+func backendFrom(ctx context.Context, plugins []contracts.Plugin, getenv func(string) string) (contracts.Backend, error) {
 	for _, p := range plugins {
 		if p.Backend == nil {
 			continue
@@ -36,7 +36,7 @@ func backendFrom(plugins []contracts.Plugin, getenv func(string) string) (contra
 		if err != nil {
 			return nil, err
 		}
-		return p.Backend(context.Background(), cfg)
+		return p.Backend(ctx, cfg)
 	}
 	return nil, nil
 }
@@ -44,6 +44,6 @@ func backendFrom(plugins []contracts.Plugin, getenv func(string) string) (contra
 // lazyBackend builds a curation backend from the global plugin registry using a
 // model-overriding view of the process environment. Used by the registered
 // default extractor on first Extract.
-func lazyBackend() (contracts.Backend, error) {
-	return backendFrom(contracts.Default.Backends(), curationEnv(os.Getenv))
+func lazyBackend(ctx context.Context) (contracts.Backend, error) {
+	return backendFrom(ctx, contracts.Default.Backends(), curationEnv(os.Getenv))
 }

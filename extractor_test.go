@@ -88,7 +88,7 @@ func TestOptions_ThresholdAndMax(t *testing.T) {
 
 func TestExtract_ConcurrentLazyInitIsRaceFree(t *testing.T) {
 	e := &LLMExtractor{
-		newBackend: func() (contracts.Backend, error) { return &fakeBackend{reply: twoValid}, nil },
+		newBackend: func(context.Context) (contracts.Backend, error) { return &fakeBackend{reply: twoValid}, nil },
 		threshold:  defaultThreshold,
 		max:        defaultMax,
 	}
@@ -103,4 +103,92 @@ func TestExtract_ConcurrentLazyInitIsRaceFree(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestExtract_LazyBackendBuildFailure(t *testing.T) {
+	buildErr := errors.New("missing env")
+	cases := []struct {
+		name       string
+		err        error
+		wantCalls  int
+		wantRetry  bool
+		wantReport bool
+	}{
+		{name: "permanent error is memorised", err: buildErr, wantCalls: 1, wantReport: true},
+		{name: "cancellation is retried", err: context.Canceled, wantCalls: 2, wantRetry: true, wantReport: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			e := &LLMExtractor{
+				newBackend: func(context.Context) (contracts.Backend, error) {
+					calls++
+					return nil, tc.err
+				},
+				threshold: defaultThreshold,
+				max:       defaultMax,
+			}
+			for i := 0; i < 2; i++ {
+				cs, err := e.Extract(context.Background(), "j", "t")
+				if err != nil || cs != nil {
+					t.Fatalf("want clean no-op, got (%v,%v)", cs, err)
+				}
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("newBackend calls: want %d, got %d", tc.wantCalls, calls)
+			}
+			if got := e.BackendErr(); tc.wantReport && !errors.Is(got, tc.err) {
+				t.Fatalf("BackendErr: want wrapping %v, got %v", tc.err, got)
+			}
+		})
+	}
+}
+
+func TestExtract_BackendBuildNotAttemptedOnEmptyInputs(t *testing.T) {
+	calls := 0
+	e := &LLMExtractor{
+		newBackend: func(context.Context) (contracts.Backend, error) {
+			calls++
+			return &fakeBackend{reply: twoValid}, nil
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	if _, err := e.Extract(context.Background(), " ", ""); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("backend built on empty inputs: %d calls", calls)
+	}
+}
+
+func TestExtract_LazyBackendReceivesCallerContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var seen context.Context
+	e := &LLMExtractor{
+		newBackend: func(c context.Context) (contracts.Backend, error) {
+			seen = c
+			return nil, c.Err()
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	if _, err := e.Extract(ctx, "j", "t"); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if seen == nil || seen.Err() == nil {
+		t.Fatal("caller context not propagated to the backend factory")
+	}
+}
+
+func TestExtract_BackendErrorIsWrapped(t *testing.T) {
+	boom := errors.New("boom")
+	_, err := New(&fakeBackend{err: boom}).Extract(context.Background(), "j", "t")
+	if !errors.Is(err, boom) {
+		t.Fatalf("want wrapped boom, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "llmextractor") {
+		t.Fatalf("error lacks package context: %v", err)
+	}
 }

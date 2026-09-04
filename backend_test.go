@@ -53,7 +53,7 @@ func TestBackendFrom_BuildsFirstBackendPlugin(t *testing.T) {
 		}
 		return ""
 	})
-	b, err := backendFrom(plugins, env)
+	b, err := backendFrom(context.Background(), plugins, env)
 	if err != nil {
 		t.Fatalf("backendFrom: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestBackendFrom_BuildsFirstBackendPlugin(t *testing.T) {
 }
 
 func TestBackendFrom_NoBackendRegisteredIsNoOp(t *testing.T) {
-	b, err := backendFrom(nil, curationEnv(func(string) string { return "" }))
+	b, err := backendFrom(context.Background(), nil, curationEnv(func(string) string { return "" }))
 	if b != nil || err != nil {
 		t.Fatalf("want (nil,nil), got (%v,%v)", b, err)
 	}
@@ -77,7 +77,7 @@ func TestBackendFrom_SkipsPluginsWithoutBackendFactory(t *testing.T) {
 			return built, nil
 		}},
 	}
-	b, err := backendFrom(plugins, func(string) string { return "" })
+	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" })
 	if err != nil || b != built {
 		t.Fatalf("want built backend via skip, got (%v,%v)", b, err)
 	}
@@ -91,7 +91,7 @@ func TestBackendFrom_ResolveErrorPropagates(t *testing.T) {
 			return &fakeBackend{}, nil
 		}},
 	}
-	b, err := backendFrom(plugins, func(string) string { return "" }) // required env unset → Resolve error
+	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" }) // required env unset → Resolve error
 	if err == nil || b != nil {
 		t.Fatalf("want (nil, error) on unresolved required setting, got (%v,%v)", b, err)
 	}
