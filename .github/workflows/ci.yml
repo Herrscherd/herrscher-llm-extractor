@@ -7,11 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
+          go-version: '1.27.3'
           cache: true
 
       # This plugin depends on herrscher-contracts and herrscher-orchestrator. A
@@ -19,7 +19,7 @@ jobs:
       # matching refs via go.work: each sibling's branch of the same name when it
       # exists, else its default. Falls back to the pinned go.mod versions.
       - name: Check out herrscher-contracts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Herrscherd/herrscher-contracts
           ref: ${{ github.head_ref }}
@@ -28,7 +28,7 @@ jobs:
         continue-on-error: true
 
       - name: Check out herrscher-orchestrator
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Herrscherd/herrscher-orchestrator
           ref: ${{ github.head_ref }}
