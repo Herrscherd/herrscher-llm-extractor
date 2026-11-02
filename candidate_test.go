@@ -1,6 +1,7 @@
 package llmextractor
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +187,8 @@ func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
 			done := make(chan []rawCandidate, 1)
 			go func() { done <- candidateArray(tc.reply) }()
 			select {
@@ -193,7 +196,7 @@ func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
 				if got != nil {
 					t.Fatalf("want nil on garbage, got %v", got)
 				}
-			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
 				t.Fatal("candidateArray did not return in bounded time")
 			}
 		})
