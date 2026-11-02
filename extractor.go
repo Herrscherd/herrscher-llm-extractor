@@ -38,12 +38,12 @@ func WithMax(m int) Option { return func(e *LLMExtractor) { e.max = m } }
 
 // New builds an extractor over an explicit backend (tests and callers that
 // already hold a model edge).
-func New(b contracts.Backend, opts ...Option) *LLMExtractor {
-	e := &LLMExtractor{backend: b, threshold: defaultThreshold, max: defaultMax}
+func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
+	extractor := &LLMExtractor{backend: backend, threshold: defaultThreshold, max: defaultMax}
 	for _, o := range opts {
-		o(e)
+		o(extractor)
 	}
-	return e
+	return extractor
 }
 
 // Extract asks the curation backend to distill journal + transcript into
@@ -53,11 +53,11 @@ func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) 
 	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
 		return nil, nil
 	}
-	b := e.resolveBackend(ctx)
-	if b == nil {
+	backend := e.resolveBackend(ctx)
+	if backend == nil {
 		return nil, nil
 	}
-	raw, err := b.Respond(ctx, extractionPrompt(journal, transcript), nil)
+	raw, err := backend.Respond(ctx, extractionPrompt(journal, transcript), nil)
 	if err != nil {
 		return nil, fmt.Errorf("llmextractor: curation respond: %w", err)
 	}
@@ -86,7 +86,7 @@ func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 	if e.built {
 		return e.backend
 	}
-	b, err := e.newBackend(ctx)
+	built, err := e.newBackend(ctx)
 	if errors.Is(err, errNoBackend) {
 		err = nil
 	}
@@ -98,6 +98,6 @@ func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 		e.built = true
 		return nil
 	}
-	e.backend, e.built = b, true
+	e.backend, e.built = built, true
 	return e.backend
 }

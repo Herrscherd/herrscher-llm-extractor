@@ -35,18 +35,18 @@ type rawCandidate struct {
 
 func parseCandidates(reply string, threshold float64, limit int) []orchestrator.Candidate {
 	raws := candidateArray(reply)
-	n := len(raws)
-	if limit > 0 && limit < n {
-		n = limit
+	count := len(raws)
+	if limit > 0 && limit < count {
+		count = limit
 	}
-	out := make([]orchestrator.Candidate, 0, n)
-	for i := range raws {
-		r := &raws[i]
-		title := strings.TrimSpace(r.Title)
-		if title == "" || r.Confidence < threshold {
+	out := make([]orchestrator.Candidate, 0, count)
+	for index := range raws {
+		raw := &raws[index]
+		title := strings.TrimSpace(raw.Title)
+		if title == "" || raw.Confidence < threshold {
 			continue
 		}
-		out = append(out, orchestrator.Candidate{Node: toNode(*r, title), Private: r.Private})
+		out = append(out, orchestrator.Candidate{Node: toNode(*raw, title), Private: raw.Private})
 		if limit > 0 && len(out) >= limit {
 			break
 		}
@@ -62,8 +62,8 @@ func candidateArray(reply string) []rawCandidate {
 		reply = reply[:maxCandidateScan]
 	}
 	attempts := 0
-	for i := range len(reply) {
-		if reply[i] != '[' {
+	for start := range len(reply) {
+		if reply[start] != '[' {
 			continue
 		}
 		if attempts >= maxCandidateAttempts {
@@ -71,11 +71,11 @@ func candidateArray(reply string) []rawCandidate {
 		}
 		attempts++
 		var raws []rawCandidate
-		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err != nil {
+		if err := json.NewDecoder(strings.NewReader(reply[start:])).Decode(&raws); err != nil {
 			continue
 		}
-		for i := range raws {
-			if strings.TrimSpace(raws[i].Title) != "" {
+		for index := range raws {
+			if strings.TrimSpace(raws[index].Title) != "" {
 				return raws
 			}
 		}
@@ -83,32 +83,32 @@ func candidateArray(reply string) []rawCandidate {
 	return nil
 }
 
-func toNode(r rawCandidate, title string) contracts.Node {
+func toNode(raw rawCandidate, title string) contracts.Node {
 	meta := map[string]string{"capturedBy": capturedBy}
-	if d := strings.TrimSpace(r.Domain); d != "" {
+	if d := strings.TrimSpace(raw.Domain); d != "" {
 		meta["domain"] = d
 	}
-	if len(r.Tags) > 0 {
-		meta["tags"] = strings.Join(r.Tags, ",")
+	if len(raw.Tags) > 0 {
+		meta["tags"] = strings.Join(raw.Tags, ",")
 	}
 	var links []contracts.Link
-	for _, l := range r.Links {
-		to := strings.TrimSpace(l.To)
-		if to == "" {
+	for _, link := range raw.Links {
+		target := strings.TrimSpace(link.To)
+		if target == "" {
 			continue
 		}
-		rel := strings.TrimSpace(l.Rel)
+		rel := strings.TrimSpace(link.Rel)
 		if rel == "" {
 			rel = contracts.RelAppliesTo
 		}
-		links = append(links, contracts.Link{To: to, Rel: rel})
+		links = append(links, contracts.Link{To: target, Rel: rel})
 	}
-	kind := mapKind(r.Kind)
+	kind := mapKind(raw.Kind)
 	return contracts.Node{
-		Key:   stableKey(kind, title, r.Private),
+		Key:   stableKey(kind, title, raw.Private),
 		Kind:  kind,
 		Title: title,
-		Body:  r.Body,
+		Body:  raw.Body,
 		Links: links,
 		Meta:  meta,
 	}
@@ -132,9 +132,9 @@ func allowedKinds() map[contracts.NodeKind]bool {
 }
 
 func mapKind(s string) contracts.NodeKind {
-	k := contracts.NodeKind(strings.ToLower(strings.TrimSpace(s)))
-	if allowedKinds()[k] {
-		return k
+	kind := contracts.NodeKind(strings.ToLower(strings.TrimSpace(s)))
+	if allowedKinds()[kind] {
+		return kind
 	}
 	return contracts.KindSession
 }
@@ -151,18 +151,18 @@ func slugOrHash(title string) string {
 	if s := slug(title); s != "" {
 		return s
 	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(strings.ToLower(title)))
-	return fmt.Sprintf("n%08x", h.Sum32())
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.ToLower(title)))
+	return fmt.Sprintf("n%08x", hasher.Sum32())
 }
 
-func slug(s string) string {
+func slug(text string) string {
 	var out []byte
 	prevDash := false
-	for _, r := range strings.ToLower(s) {
+	for _, char := range strings.ToLower(text) {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			out = append(out, byte(r))
+		case char >= 'a' && char <= 'z', char >= '0' && char <= '9':
+			out = append(out, byte(char))
 			prevDash = false
 		default:
 			if !prevDash {

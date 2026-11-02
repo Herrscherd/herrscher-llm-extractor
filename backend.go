@@ -22,15 +22,15 @@ func curationEnv(base func(string) string) func(string) string {
 var errNoBackend = errors.New("no curation backend registered")
 
 func backendFrom(ctx context.Context, plugins []contracts.Plugin, getenv func(string) string) (contracts.Backend, error) {
-	for _, p := range plugins {
-		if p.Backend == nil {
+	for _, plugin := range plugins {
+		if plugin.Backend == nil {
 			continue
 		}
-		cfg, err := contracts.Resolve(p.Manifest.Config, getenv)
+		cfg, err := contracts.Resolve(plugin.Manifest.Config, getenv)
 		if err != nil {
 			return nil, err
 		}
-		return p.Backend(ctx, cfg)
+		return plugin.Backend(ctx, cfg)
 	}
 	return nil, errNoBackend
 }
