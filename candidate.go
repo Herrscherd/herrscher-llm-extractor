@@ -162,7 +162,7 @@ func slug(text string) string {
 	for _, char := range strings.ToLower(text) {
 		switch {
 		case char >= 'a' && char <= 'z', char >= '0' && char <= '9':
-			out = append(out, byte(char))
+			out = append(out, string(char)...)
 			prevDash = false
 		default:
 			if !prevDash {
