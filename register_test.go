@@ -7,9 +7,6 @@ import (
 	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
-// The registry is package-private in orchestrator; we verify registration by
-// observing that newDefault produces a usable, lazily-backed extractor that
-// no-ops cleanly with no backend registered.
 func TestNewDefault_IsLazyAndNoOpsWithoutBackend(t *testing.T) {
 	e := newDefault()
 	if e.threshold != defaultThreshold || e.max != defaultMax {
