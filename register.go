@@ -1,6 +1,6 @@
 package llmextractor
 
-import "github.com/Herrscherd/herrscher-orchestrator"
+import orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 
 // init registers the open reference extractor under "llm" so a host that blank-
 // imports this package and passes `--extractor llm` opts into auto-capture. This

@@ -6,8 +6,8 @@ import (
 	"hash/fnv"
 	"strings"
 
-	"github.com/Herrscherd/herrscher-contracts"
-	"github.com/Herrscherd/herrscher-orchestrator"
+	contracts "github.com/Herrscherd/herrscher-contracts"
+	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 // capturedBy stamps every auto-recorded node so human curators can audit and

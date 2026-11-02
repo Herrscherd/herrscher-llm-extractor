@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Herrscherd/herrscher-contracts"
-	"github.com/Herrscherd/herrscher-orchestrator"
+	contracts "github.com/Herrscherd/herrscher-contracts"
+	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 type fakeBackend struct {

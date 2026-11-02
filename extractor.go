@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Herrscherd/herrscher-contracts"
-	"github.com/Herrscherd/herrscher-orchestrator"
+	contracts "github.com/Herrscherd/herrscher-contracts"
+	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 // LLMExtractor is the open, reference Extractor: it asks a contracts.Backend to

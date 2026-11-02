@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Herrscherd/herrscher-contracts"
-	"github.com/Herrscherd/herrscher-orchestrator"
+	contracts "github.com/Herrscherd/herrscher-contracts"
+	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 // memStub is a minimal in-memory Memory: enough for the Learner's Consolidate
@@ -26,6 +26,7 @@ func newMemStub(transcript string) *memStub {
 func (m *memStub) Recall(_ context.Context, key string, _ int) (contracts.Subgraph, error) {
 	return contracts.Subgraph{Root: m.nodes[key]}, nil
 }
+
 func (m *memStub) Record(_ context.Context, n contracts.Node) error {
 	if m.nodes == nil {
 		m.nodes = map[string]contracts.Node{}
@@ -33,9 +34,11 @@ func (m *memStub) Record(_ context.Context, n contracts.Node) error {
 	m.nodes[n.Key] = n
 	return nil
 }
+
 func (m *memStub) Search(context.Context, contracts.Query) ([]contracts.Node, error) {
 	return nil, nil
 }
+
 func (m *memStub) Links(_ context.Context, from, to, rel string) error {
 	m.links = append(m.links, [3]string{from, to, rel})
 	return nil

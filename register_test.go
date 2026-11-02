@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Herrscherd/herrscher-orchestrator"
+	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 // The registry is package-private in orchestrator; we verify registration by

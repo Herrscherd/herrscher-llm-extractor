@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // curationEnv wraps a base getenv so any model key resolves to
