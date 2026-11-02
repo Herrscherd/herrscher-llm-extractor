@@ -59,11 +59,12 @@ func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
 // call, wrapped with %w, so errors.Is and errors.As reach the backend's own
 // error. The package defines no sentinel for Extract.
 //
-// A lazy backend build that fails with a permanent error is memorised: no later
-// Extract builds again, BackendErr reports it, and Extract stays a no-op. A build
-// ended by context.Canceled or context.DeadlineExceeded is not memorised, and the
-// next Extract builds again. A build that panics is not memorised either: the
-// panic reaches the Extract call that started the build, and the next Extract
+// A lazy backend build that fails while the context of its Extract call is still
+// live is memorised: no later Extract builds again, BackendErr reports the
+// failure, and Extract stays a no-op. A build that fails once that context is done
+// is an interruption, whatever error the factory returned: it is not memorised,
+// and the next Extract builds again. A build that panics is not memorised either:
+// the panic reaches the Extract call that started the build, and the next Extract
 // builds again.
 func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) ([]orchestrator.Candidate, error) {
 	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
@@ -129,7 +130,7 @@ func (e *LLMExtractor) build(ctx context.Context, done chan struct{}) contracts.
 	}()
 	backend, err := e.newBackend(ctx)
 	completed = true
-	return e.settle(done, backend, err)
+	return e.settle(ctx, done, backend, err)
 }
 
 func (e *LLMExtractor) abandon(done chan struct{}) {
@@ -139,7 +140,7 @@ func (e *LLMExtractor) abandon(done chan struct{}) {
 	close(done)
 }
 
-func (e *LLMExtractor) settle(done chan struct{}, backend contracts.Backend, err error) contracts.Backend {
+func (e *LLMExtractor) settle(ctx context.Context, done chan struct{}, backend contracts.Backend, err error) contracts.Backend {
 	if errors.Is(err, errNoBackend) {
 		err = nil
 	}
@@ -148,7 +149,7 @@ func (e *LLMExtractor) settle(done chan struct{}, backend contracts.Backend, err
 	e.building = nil
 	close(done)
 	switch {
-	case isInterruption(err):
+	case err != nil && ctx.Err() != nil:
 		return nil
 	case err != nil:
 		e.backendErr, e.built = err, true
@@ -156,8 +157,4 @@ func (e *LLMExtractor) settle(done chan struct{}, backend contracts.Backend, err
 	}
 	e.backend, e.built = backend, true
 	return backend
-}
-
-func isInterruption(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

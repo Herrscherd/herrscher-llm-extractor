@@ -3,6 +3,7 @@ package llmextractor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,22 +109,35 @@ func TestExtract_LazyBackendBuildFailure(t *testing.T) {
 	cases := []struct {
 		name       string
 		err        error
+		callerCtx  func() context.Context
 		wantCalls  int
 		wantReport bool
 	}{
-		{name: "permanent error is memorised and reported", err: buildErr, wantCalls: 1, wantReport: true},
-		{name: "cancellation is retried and not reported", err: context.Canceled, wantCalls: 2, wantReport: false},
-		{name: "deadline is retried and not reported", err: context.DeadlineExceeded, wantCalls: 2, wantReport: false},
+		{name: "permanent error is memorised and reported", err: buildErr, callerCtx: context.Background, wantCalls: 1, wantReport: true},
+		{name: "cancellation is retried and not reported", err: context.Canceled, callerCtx: cancelledContext, wantCalls: 2, wantReport: false},
+		{name: "deadline is retried and not reported", err: context.DeadlineExceeded, callerCtx: expiredContext, wantCalls: 2, wantReport: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertLazyBuildFailure(t, tc.err, tc.wantCalls, tc.wantReport)
+			assertLazyBuildFailure(t, tc.callerCtx, tc.err, tc.wantCalls, tc.wantReport)
 		})
 	}
 }
 
-func assertLazyBuildFailure(t *testing.T, buildErr error, wantCalls int, wantReport bool) {
-	t.Helper()
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func expiredContext() context.Context {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	cancel()
+	return ctx
+}
+
+func TestExtract_BuildErrorWrappingDeadlineWithLiveContextIsMemorised(t *testing.T) {
+	buildErr := fmt.Errorf("plugin handshake: %w", context.DeadlineExceeded)
 	calls := 0
 	e := &LLMExtractor{
 		newBackend: func(context.Context) (contracts.Backend, error) {
@@ -135,6 +149,36 @@ func assertLazyBuildFailure(t *testing.T, buildErr error, wantCalls int, wantRep
 	}
 	for range 2 {
 		cs, err := e.Extract(context.Background(), "j", "t")
+		if err != nil || cs != nil {
+			t.Fatalf("want clean no-op, got (%v,%v)", cs, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("newBackend calls: want 1 (memorised despite the deadline error), got %d", calls)
+	}
+	got := e.BackendErr()
+	if !errors.Is(got, buildErr) {
+		t.Fatalf("BackendErr: want wrapping %v, got %v", buildErr, got)
+	}
+	if !errors.Is(got, context.DeadlineExceeded) {
+		t.Fatalf("BackendErr: want the deadline reachable through errors.Is, got %v", got)
+	}
+}
+
+func assertLazyBuildFailure(t *testing.T, callerCtx func() context.Context, buildErr error, wantCalls int, wantReport bool) {
+	t.Helper()
+	ctx := callerCtx()
+	calls := 0
+	e := &LLMExtractor{
+		newBackend: func(context.Context) (contracts.Backend, error) {
+			calls++
+			return nil, buildErr
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	for range 2 {
+		cs, err := e.Extract(ctx, "j", "t")
 		if err != nil || cs != nil {
 			t.Fatalf("want clean no-op, got (%v,%v)", cs, err)
 		}
@@ -198,44 +242,46 @@ func TestExtract_BackendErrorIsWrapped(t *testing.T) {
 }
 
 func TestExtract_ConcurrentCallersBuildBackendOnce(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		var calls atomic.Int32
-		release := make(chan struct{})
-		e := &LLMExtractor{
-			newBackend: func(context.Context) (contracts.Backend, error) {
-				calls.Add(1)
-				<-release
-				return &fakeBackend{reply: twoValid}, nil
-			},
-			threshold: defaultThreshold,
-			max:       defaultMax,
+	var calls atomic.Int32
+	entered := make(chan struct{}, 8)
+	release := make(chan struct{})
+	e := &LLMExtractor{
+		newBackend: func(context.Context) (contracts.Backend, error) {
+			calls.Add(1)
+			entered <- struct{}{}
+			<-release
+			return &fakeBackend{reply: twoValid}, nil
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	var callers sync.WaitGroup
+	for range 8 {
+		callers.Go(func() {
+			cs, err := e.Extract(context.Background(), "j", "t")
+			if err != nil || len(cs) != 2 {
+				t.Errorf("Extract: want 2 candidates, got (%v,%v)", cs, err)
+			}
+		})
+	}
+	awaitWithin(t, entered, "the backend build never started")
+
+	bailed := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	go func() {
+		defer close(bailed)
+		if cs, err := e.Extract(ctx, "j", "t"); err != nil || cs != nil {
+			t.Errorf("waiter with a done context: want (nil,nil), got (%v,%v)", cs, err)
 		}
-		var callers sync.WaitGroup
-		for range 8 {
-			callers.Go(func() {
-				cs, err := e.Extract(context.Background(), "j", "t")
-				if err != nil || len(cs) != 2 {
-					t.Errorf("Extract: want 2 candidates, got (%v,%v)", cs, err)
-				}
-			})
-		}
-		synctest.Wait()
-		builds := calls.Load()
-		close(release)
-		if builds != 1 {
-			t.Fatalf("newBackend calls while blocked: want 1, got %d", builds)
-		}
-		finished := make(chan struct{})
-		go func() {
-			callers.Wait()
-			close(finished)
-		}()
-		select {
-		case <-finished:
-		case <-time.After(time.Second):
-			t.Fatal("callers still blocked after the build was released")
-		}
-	})
+	}()
+	awaitWithin(t, bailed, "a waiter with a done context stayed blocked behind the build")
+
+	close(release)
+	awaitWithin(t, allDone(&callers), "callers still blocked after the build was released")
+	if builds := calls.Load(); builds != 1 {
+		t.Fatalf("newBackend calls: want 1, got %d", builds)
+	}
 }
 
 func TestExtract_WaiterTakesOverWhenBuilderIsCancelled(t *testing.T) {
@@ -318,31 +364,55 @@ func TestExtract_PanickingBuildIsRetried(t *testing.T) {
 }
 
 func TestExtract_WaiterLeavesWhenItsContextEnds(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		release := make(chan struct{})
-		e := &LLMExtractor{
-			newBackend: func(context.Context) (contracts.Backend, error) {
-				<-release
-				return &fakeBackend{reply: twoValid}, nil
-			},
-			threshold: defaultThreshold,
-			max:       defaultMax,
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	e := &LLMExtractor{
+		newBackend: func(context.Context) (contracts.Backend, error) {
+			entered <- struct{}{}
+			<-release
+			return &fakeBackend{reply: twoValid}, nil
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	var builder sync.WaitGroup
+	builder.Go(func() {
+		if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
+			t.Errorf("builder: want 2 candidates, got (%v,%v)", cs, err)
 		}
-		var builder sync.WaitGroup
-		builder.Go(func() {
-			if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
-				t.Errorf("builder: want 2 candidates, got (%v,%v)", cs, err)
-			}
-		})
-		synctest.Wait()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		cs, err := e.Extract(ctx, "j", "t")
-		if err != nil || cs != nil {
-			t.Fatalf("waiter past its deadline: want (nil,nil), got (%v,%v)", cs, err)
-		}
-		close(release)
-		builder.Wait()
 	})
+	awaitWithin(t, entered, "the backend build never started")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(10*time.Millisecond, cancel)
+	left := make(chan struct{})
+	go func() {
+		defer close(left)
+		if cs, err := e.Extract(ctx, "j", "t"); err != nil || cs != nil {
+			t.Errorf("waiter past its deadline: want (nil,nil), got (%v,%v)", cs, err)
+		}
+	}()
+	awaitWithin(t, left, "the waiter stayed blocked behind the build after its context ended")
+
+	close(release)
+	awaitWithin(t, allDone(&builder), "the builder stayed blocked after the build was released")
+}
+
+func awaitWithin(t *testing.T, ready <-chan struct{}, failure string) {
+	t.Helper()
+	select {
+	case <-ready:
+	case <-time.After(time.Second):
+		t.Fatal(failure)
+	}
+}
+
+func allDone(wg *sync.WaitGroup) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	return done
 }
