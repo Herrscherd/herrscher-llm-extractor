@@ -19,6 +19,7 @@ type LLMExtractor struct {
 	backend    contracts.Backend
 	newBackend func(context.Context) (contracts.Backend, error)
 	mu         sync.Mutex
+	building   chan struct{}
 	built      bool
 	backendErr error
 	threshold  float64
@@ -81,23 +82,47 @@ func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 	if e.newBackend == nil {
 		return e.backend
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.built {
-		return e.backend
+	for {
+		e.mu.Lock()
+		if e.built {
+			backend := e.backend
+			e.mu.Unlock()
+			return backend
+		}
+		if e.building == nil {
+			done := make(chan struct{})
+			e.building = done
+			e.mu.Unlock()
+			return e.build(ctx, done)
+		}
+		done := e.building
+		e.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil
+		}
 	}
-	built, err := e.newBackend(ctx)
+}
+
+func (e *LLMExtractor) build(ctx context.Context, done chan struct{}) contracts.Backend {
+	backend, err := e.newBackend(ctx)
 	if errors.Is(err, errNoBackend) {
 		err = nil
 	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.building = nil
 	e.backendErr = err
+	close(done)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil
-		}
-		e.built = true
+		e.built = !isInterruption(err)
 		return nil
 	}
-	e.backend, e.built = built, true
-	return e.backend
+	e.backend, e.built = backend, true
+	return backend
+}
+
+func isInterruption(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

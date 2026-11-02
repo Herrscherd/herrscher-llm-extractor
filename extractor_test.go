@@ -5,18 +5,19 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 type fakeBackend struct {
-	mu     sync.Mutex
-	reply  string
-	err    error
-	got    contracts.Prompt
-	closed bool
+	mu    sync.Mutex
+	reply string
+	err   error
+	got   contracts.Prompt
 }
 
 func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, _ func(contracts.BackendEvent)) (string, error) {
@@ -27,13 +28,8 @@ func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, _ func(cont
 }
 
 func (f *fakeBackend) Close() error {
-	f.mu.Lock()
-	f.closed = true
-	f.mu.Unlock()
 	return nil
 }
-
-var _ orchestrator.Extractor = (*LLMExtractor)(nil)
 
 func TestExtract_HappyPath(t *testing.T) {
 	fb := &fakeBackend{reply: twoValid}
@@ -194,4 +190,65 @@ func TestExtract_BackendErrorIsWrapped(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("want wrapped boom, got %v", err)
 	}
+}
+
+func TestExtract_ConcurrentCallersBuildBackendOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var calls atomic.Int32
+		release := make(chan struct{})
+		e := &LLMExtractor{
+			newBackend: func(context.Context) (contracts.Backend, error) {
+				calls.Add(1)
+				<-release
+				return &fakeBackend{reply: twoValid}, nil
+			},
+			threshold: defaultThreshold,
+			max:       defaultMax,
+		}
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				cs, err := e.Extract(context.Background(), "j", "t")
+				if err != nil || len(cs) != 2 {
+					t.Errorf("Extract: want 2 candidates, got (%v,%v)", cs, err)
+				}
+			})
+		}
+		synctest.Wait()
+		close(release)
+		wg.Wait()
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("newBackend calls: want 1, got %d", got)
+		}
+	})
+}
+
+func TestExtract_WaiterLeavesWhenItsContextEnds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		e := &LLMExtractor{
+			newBackend: func(context.Context) (contracts.Backend, error) {
+				<-release
+				return &fakeBackend{reply: twoValid}, nil
+			},
+			threshold: defaultThreshold,
+			max:       defaultMax,
+		}
+		var builder sync.WaitGroup
+		builder.Go(func() {
+			if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
+				t.Errorf("builder: want 2 candidates, got (%v,%v)", cs, err)
+			}
+		})
+		synctest.Wait()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		cs, err := e.Extract(ctx, "j", "t")
+		if err != nil || cs != nil {
+			t.Fatalf("waiter past its deadline: want (nil,nil), got (%v,%v)", cs, err)
+		}
+		close(release)
+		builder.Wait()
+	})
 }

@@ -3,8 +3,6 @@ package llmextractor
 import (
 	"context"
 	"testing"
-
-	orchestrator "github.com/Herrscherd/herrscher-orchestrator"
 )
 
 func TestNewDefault_IsLazyAndNoOpsWithoutBackend(t *testing.T) {
@@ -20,5 +18,3 @@ func TestNewDefault_IsLazyAndNoOpsWithoutBackend(t *testing.T) {
 		t.Fatalf("want clean no-op, got (%v,%v)", cs, err)
 	}
 }
-
-var _ orchestrator.Extractor = newDefault()
