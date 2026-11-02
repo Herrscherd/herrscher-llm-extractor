@@ -58,6 +58,13 @@ func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
 // bound is dropped without an error. The only error returned is a failed Respond
 // call, wrapped with %w, so errors.Is and errors.As reach the backend's own
 // error. The package defines no sentinel for Extract.
+//
+// A lazy backend build that fails with a permanent error is memorised: no later
+// Extract builds again, BackendErr reports it, and Extract stays a no-op. A build
+// ended by context.Canceled or context.DeadlineExceeded is not memorised, and the
+// next Extract builds again. A build that panics is not memorised either: the
+// panic reaches the Extract call that started the build, and the next Extract
+// builds again.
 func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) ([]orchestrator.Candidate, error) {
 	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
 		return nil, nil
@@ -73,7 +80,7 @@ func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) 
 	return parseCandidates(raw, e.threshold, e.max), nil
 }
 
-// BackendErr returns the error of the lazy backend creation, or nil when no backend failed.
+// BackendErr returns the permanent error of the lazy backend creation, or nil when no backend failed permanently.
 func (e *LLMExtractor) BackendErr() error {
 	if e.newBackend == nil {
 		return nil
@@ -114,17 +121,37 @@ func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 }
 
 func (e *LLMExtractor) build(ctx context.Context, done chan struct{}) contracts.Backend {
+	completed := false
+	defer func() {
+		if !completed {
+			e.abandon(done)
+		}
+	}()
 	backend, err := e.newBackend(ctx)
+	completed = true
+	return e.settle(done, backend, err)
+}
+
+func (e *LLMExtractor) abandon(done chan struct{}) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.building = nil
+	close(done)
+}
+
+func (e *LLMExtractor) settle(done chan struct{}, backend contracts.Backend, err error) contracts.Backend {
 	if errors.Is(err, errNoBackend) {
 		err = nil
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.building = nil
-	e.backendErr = err
 	close(done)
-	if err != nil {
-		e.built = !isInterruption(err)
+	switch {
+	case isInterruption(err):
+		return nil
+	case err != nil:
+		e.backendErr, e.built = err, true
 		return nil
 	}
 	e.backend, e.built = backend, true

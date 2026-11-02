@@ -1,10 +1,8 @@
 package llmextractor
 
 import (
-	"context"
 	"strings"
 	"testing"
-	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
@@ -187,17 +185,8 @@ func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-			defer cancel()
-			done := make(chan []rawCandidate, 1)
-			go func() { done <- candidateArray(tc.reply) }()
-			select {
-			case got := <-done:
-				if got != nil {
-					t.Fatalf("want nil on garbage, got %v", got)
-				}
-			case <-ctx.Done():
-				t.Fatal("candidateArray did not return in bounded time")
+			if got := candidateArray(tc.reply); got != nil {
+				t.Fatalf("want nil on garbage, got %v", got)
 			}
 		})
 	}

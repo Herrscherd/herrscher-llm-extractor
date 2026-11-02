@@ -111,8 +111,9 @@ func TestExtract_LazyBackendBuildFailure(t *testing.T) {
 		wantCalls  int
 		wantReport bool
 	}{
-		{name: "permanent error is memorised", err: buildErr, wantCalls: 1, wantReport: true},
-		{name: "cancellation is retried", err: context.Canceled, wantCalls: 2, wantReport: true},
+		{name: "permanent error is memorised and reported", err: buildErr, wantCalls: 1, wantReport: true},
+		{name: "cancellation is retried and not reported", err: context.Canceled, wantCalls: 2, wantReport: false},
+		{name: "deadline is retried and not reported", err: context.DeadlineExceeded, wantCalls: 2, wantReport: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,8 +142,12 @@ func assertLazyBuildFailure(t *testing.T, buildErr error, wantCalls int, wantRep
 	if calls != wantCalls {
 		t.Fatalf("newBackend calls: want %d, got %d", wantCalls, calls)
 	}
-	if got := e.BackendErr(); wantReport && !errors.Is(got, buildErr) {
+	got := e.BackendErr()
+	if wantReport && !errors.Is(got, buildErr) {
 		t.Fatalf("BackendErr: want wrapping %v, got %v", buildErr, got)
+	}
+	if !wantReport && got != nil {
+		t.Fatalf("BackendErr: want nil for an interrupted build, got %v", got)
 	}
 }
 
@@ -205,9 +210,9 @@ func TestExtract_ConcurrentCallersBuildBackendOnce(t *testing.T) {
 			threshold: defaultThreshold,
 			max:       defaultMax,
 		}
-		var wg sync.WaitGroup
+		var callers sync.WaitGroup
 		for range 8 {
-			wg.Go(func() {
+			callers.Go(func() {
 				cs, err := e.Extract(context.Background(), "j", "t")
 				if err != nil || len(cs) != 2 {
 					t.Errorf("Extract: want 2 candidates, got (%v,%v)", cs, err)
@@ -215,10 +220,99 @@ func TestExtract_ConcurrentCallersBuildBackendOnce(t *testing.T) {
 			})
 		}
 		synctest.Wait()
+		builds := calls.Load()
 		close(release)
-		wg.Wait()
-		if got := calls.Load(); got != 1 {
-			t.Fatalf("newBackend calls: want 1, got %d", got)
+		if builds != 1 {
+			t.Fatalf("newBackend calls while blocked: want 1, got %d", builds)
+		}
+		finished := make(chan struct{})
+		go func() {
+			callers.Wait()
+			close(finished)
+		}()
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Fatal("callers still blocked after the build was released")
+		}
+	})
+}
+
+func TestExtract_WaiterTakesOverWhenBuilderIsCancelled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		builderCtx, cancelBuilder := context.WithCancel(context.Background())
+		defer cancelBuilder()
+		var calls atomic.Int32
+		e := &LLMExtractor{
+			newBackend: func(ctx context.Context) (contracts.Backend, error) {
+				if calls.Add(1) == 1 {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return &fakeBackend{reply: twoValid}, nil
+			},
+			threshold: defaultThreshold,
+			max:       defaultMax,
+		}
+		var builder sync.WaitGroup
+		builder.Go(func() {
+			if cs, err := e.Extract(builderCtx, "j", "t"); err != nil || cs != nil {
+				t.Errorf("cancelled builder: want (nil,nil), got (%v,%v)", cs, err)
+			}
+		})
+		synctest.Wait()
+
+		var waiter sync.WaitGroup
+		waiter.Go(func() {
+			if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
+				t.Errorf("waiter: want 2 candidates after takeover, got (%v,%v)", cs, err)
+			}
+		})
+		synctest.Wait()
+		cancelBuilder()
+		builder.Wait()
+		waiter.Wait()
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("newBackend calls: want 2 (cancelled builder, then waiter), got %d", got)
+		}
+		if err := e.BackendErr(); err != nil {
+			t.Fatalf("BackendErr after a cancelled build: want nil, got %v", err)
+		}
+	})
+}
+
+func TestExtract_PanickingBuildIsRetried(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		e := &LLMExtractor{
+			newBackend: func(context.Context) (contracts.Backend, error) {
+				calls++
+				if calls == 1 {
+					panic("factory bug")
+				}
+				return &fakeBackend{reply: twoValid}, nil
+			},
+			threshold: defaultThreshold,
+			max:       defaultMax,
+		}
+		func() {
+			defer func() {
+				if got := recover(); got != "factory bug" {
+					t.Errorf("recovered %v, want the factory panic", got)
+				}
+			}()
+			cs, err := e.Extract(context.Background(), "j", "t")
+			t.Errorf("Extract returned (%v,%v), want the factory panic", cs, err)
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		cs, err := e.Extract(ctx, "j", "t")
+		if err != nil || len(cs) != 2 {
+			t.Fatalf("Extract after a panicking build: want 2 candidates, got (%v,%v)", cs, err)
+		}
+		if calls != 2 {
+			t.Fatalf("newBackend calls: want 2 (panic, then success), got %d", calls)
 		}
 	})
 }
