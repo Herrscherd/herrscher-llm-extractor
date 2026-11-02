@@ -2,7 +2,6 @@ package llmextractor
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"strings"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -27,11 +26,7 @@ func fenced(sentinel, content string) string {
 }
 
 func randomSentinel() string {
-	var buf [8]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "UNTRUSTED-DATA-BOUNDARY"
-	}
-	return "UNTRUSTED-" + hex.EncodeToString(buf[:])
+	return "UNTRUSTED-" + rand.Text()
 }
 
 const instructions = `You are herrscher's memory curator. From the work below,
