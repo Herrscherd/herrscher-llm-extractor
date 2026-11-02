@@ -67,7 +67,9 @@ func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
 // is done, is an interruption: it is not memorised, BackendErr does not report it,
 // and the next Extract builds again. A build that panics is not memorised either:
 // the panic reaches the Extract call that started the build, and the next Extract
-// builds again.
+// builds again. A factory that keeps failing with a context error while its
+// caller's context is live is therefore rebuilt by every Extract with no report:
+// the extractor has no logger, and BackendErr does not show it.
 func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) ([]orchestrator.Candidate, error) {
 	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
 		return nil, nil

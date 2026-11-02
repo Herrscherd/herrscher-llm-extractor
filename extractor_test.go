@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,7 +102,7 @@ func TestExtract_ConcurrentLazyInitIsRaceFree(t *testing.T) {
 			}
 		}()
 	}
-	wg.Wait()
+	awaitWithin(t, allDone(&wg), "concurrent Extract calls stayed blocked")
 }
 
 func TestExtract_LazyBackendBuildFailure(t *testing.T) {
@@ -317,7 +318,7 @@ func TestExtract_WaiterTakesOverWhenBuilderIsCancelled(t *testing.T) {
 			t.Errorf("waiter: want 2 candidates after takeover, got (%v,%v)", cs, err)
 		}
 	})
-	time.Sleep(10 * time.Millisecond)
+	awaitParkedWaiter(t)
 	cancelBuilder()
 	awaitWithin(t, allDone(&builder), "the cancelled builder stayed blocked")
 	awaitWithin(t, allDone(&waiter), "the waiter did not take over the cancelled build")
@@ -408,6 +409,29 @@ func awaitWithin(t *testing.T, ready <-chan struct{}, failure string) {
 	case <-time.After(time.Second):
 		t.Fatal(failure)
 	}
+}
+
+func awaitParkedWaiter(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !goroutineParkedIn("(*LLMExtractor).resolveBackend", "[select") {
+		if time.Now().After(deadline) {
+			t.Fatal("the waiter never parked in the select of resolveBackend")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func goroutineParkedIn(frame, state string) bool {
+	buf := make([]byte, 1<<20)
+	stacks := string(buf[:runtime.Stack(buf, true)])
+	for _, stack := range strings.Split(stacks, "\n\n") {
+		header, _, _ := strings.Cut(stack, "\n")
+		if strings.Contains(header, state) && strings.Contains(stack, frame) {
+			return true
+		}
+	}
+	return false
 }
 
 func allDone(wg *sync.WaitGroup) <-chan struct{} {
