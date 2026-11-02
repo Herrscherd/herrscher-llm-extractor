@@ -33,7 +33,6 @@ func (f *fakeBackend) Close() error {
 	return nil
 }
 
-// compile-time proof the type satisfies the seam.
 var _ orchestrator.Extractor = (*LLMExtractor)(nil)
 
 func TestExtract_HappyPath(t *testing.T) {

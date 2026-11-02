@@ -8,10 +8,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// extractionPrompt builds the curation prompt: it hands the model the call
-// journal and session transcript and asks for a JSON array of memory candidates,
-// mirroring herrscher's own memory-writing guidance (one fact per node,
-// Why/How-to-apply for decisions, link liberally, mark agent-private skills).
 func extractionPrompt(journal, transcript string) contracts.Prompt {
 	sentinel := randomSentinel()
 	var b strings.Builder
@@ -25,9 +21,6 @@ func extractionPrompt(journal, transcript string) contracts.Prompt {
 	return contracts.Prompt{Content: b.String()}
 }
 
-// writeFenced brackets untrusted content between a per-call sentinel so that
-// instructions embedded in the journal/transcript cannot be mistaken for the
-// curator's own directives.
 func writeFenced(b *strings.Builder, sentinel, content string) {
 	b.WriteString(sentinel)
 	b.WriteString("\n")
@@ -36,8 +29,6 @@ func writeFenced(b *strings.Builder, sentinel, content string) {
 	b.WriteString(sentinel)
 }
 
-// randomSentinel returns an unguessable boundary token; on the practically
-// impossible rand failure it falls back to a fixed (still-bracketing) token.
 func randomSentinel() string {
 	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {

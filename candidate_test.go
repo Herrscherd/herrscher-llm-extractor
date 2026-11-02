@@ -75,7 +75,6 @@ func TestParseCandidates_TolerantOfWrapperAndGarbage(t *testing.T) {
 }
 
 func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
-	// A valid array wrapped in prose that itself contains brackets must still extract.
 	reply := "Here are the facts [as requested]:\n" + twoValid + "\nHope this helps ]"
 	cs := parseCandidates(reply, 0.6, 0)
 	if len(cs) != 2 {
@@ -84,8 +83,6 @@ func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
 }
 
 func TestParseCandidates_TitlelessArrayDoesNotMaskReal(t *testing.T) {
-	// A stray empty/title-less array decoding before the real one must not shadow it:
-	// [] decodes empty, [{}] decodes one title-less entry — both are skipped.
 	reply := "Thinking... [] and maybe [{}] but actually:\n" + twoValid
 	cs := parseCandidates(reply, 0.6, 0)
 	if len(cs) != 2 {

@@ -72,7 +72,7 @@ func TestBackendFrom_NoBackendRegisteredIsNoOp(t *testing.T) {
 func TestBackendFrom_SkipsPluginsWithoutBackendFactory(t *testing.T) {
 	built := &fakeBackend{}
 	plugins := []contracts.Plugin{
-		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}}, // no Backend factory
+		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}},
 		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}, Backend: func(_ context.Context, _ contracts.PluginConfig) (contracts.Backend, error) {
 			return built, nil
 		}},
@@ -91,7 +91,7 @@ func TestBackendFrom_ResolveErrorPropagates(t *testing.T) {
 			return &fakeBackend{}, nil
 		}},
 	}
-	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" }) // required env unset → Resolve error
+	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" })
 	if err == nil || b != nil {
 		t.Fatalf("want (nil, error) on unresolved required setting, got (%v,%v)", b, err)
 	}

@@ -14,7 +14,7 @@ import (
 // LLMExtractor is the open, reference Extractor: it asks a contracts.Backend to
 // distill a stretch of work (journal + transcript) into memory candidates. The
 // backend is either injected (New) or built lazily from the plugin registry on
-// first use (the registered default — see register.go / backend.go).
+// first use (the registered default, see register.go and backend.go).
 type LLMExtractor struct {
 	backend    contracts.Backend
 	newBackend func(context.Context) (contracts.Backend, error)
