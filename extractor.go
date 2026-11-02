@@ -34,7 +34,9 @@ type Option func(*LLMExtractor)
 // WithThreshold drops candidates below the given confidence (default 0.6).
 func WithThreshold(t float64) Option { return func(e *LLMExtractor) { e.threshold = t } }
 
-// WithMax caps candidates recorded per Consolidate (0 = uncapped; default 8).
+// WithMax caps how many candidates one Extract call returns, counted after the
+// threshold filter; candidates past the cap are dropped, not deferred. Zero
+// disables the cap. The default is 8.
 func WithMax(m int) Option { return func(e *LLMExtractor) { e.max = m } }
 
 // New builds an extractor over an explicit backend (tests and callers that
@@ -48,8 +50,14 @@ func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
 }
 
 // Extract asks the curation backend to distill journal + transcript into
-// candidates. It is best-effort: no backend or empty inputs yield a clean no-op;
-// a bad JSON reply yields no candidates without erroring.
+// candidates. It is best-effort: blank inputs, no registered backend, or a
+// backend that failed to build yield (nil, nil), and BackendErr reports the
+// build failure. A reply without a usable JSON array also yields (nil, nil).
+// The reply is scanned for its first array holding a titled candidate, and only
+// within its first 1 MiB and before its 65th '[' byte: an array past either
+// bound is dropped without an error. The only error returned is a failed Respond
+// call, wrapped with %w, so errors.Is and errors.As reach the backend's own
+// error. The package defines no sentinel for Extract.
 func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) ([]orchestrator.Candidate, error) {
 	if strings.TrimSpace(journal) == "" && strings.TrimSpace(transcript) == "" {
 		return nil, nil
