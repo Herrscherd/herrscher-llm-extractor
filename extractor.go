@@ -64,6 +64,7 @@ func (e *LLMExtractor) Extract(ctx context.Context, journal, transcript string) 
 	return parseCandidates(raw, e.threshold, e.max), nil
 }
 
+// BackendErr returns the error of the lazy backend creation, or nil when no backend failed.
 func (e *LLMExtractor) BackendErr() error {
 	if e.newBackend == nil {
 		return nil

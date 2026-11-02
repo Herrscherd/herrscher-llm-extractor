@@ -25,7 +25,7 @@ func (m *memStub) Recall(_ context.Context, key string, _ int) (contracts.Subgra
 
 func (m *memStub) Record(_ context.Context, n contracts.Node) error {
 	if m.nodes == nil {
-		m.nodes = map[string]contracts.Node{}
+		m.nodes = make(map[string]contracts.Node)
 	}
 	m.nodes[n.Key] = n
 	return nil

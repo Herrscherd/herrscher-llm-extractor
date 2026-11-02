@@ -138,7 +138,7 @@ func TestStableKey_NonSluggableTitlesGetDistinctKeys(t *testing.T) {
 	if len(cs) != 3 {
 		t.Fatalf("want 3, got %d", len(cs))
 	}
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, c := range cs {
 		k := c.Node.Key
 		if strings.HasSuffix(k, "/") {

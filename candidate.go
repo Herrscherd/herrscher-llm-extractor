@@ -157,19 +157,19 @@ func slugOrHash(title string) string {
 }
 
 func slug(s string) string {
-	var b strings.Builder
+	var out []byte
 	prevDash := false
 	for _, r := range strings.ToLower(s) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
+			out = append(out, byte(r))
 			prevDash = false
 		default:
 			if !prevDash {
-				b.WriteByte('-')
+				out = append(out, '-')
 				prevDash = true
 			}
 		}
 	}
-	return strings.Trim(b.String(), "-")
+	return strings.Trim(string(out), "-")
 }
