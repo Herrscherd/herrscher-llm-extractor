@@ -33,11 +33,11 @@ type rawCandidate struct {
 	Confidence float64   `json:"confidence"`
 }
 
-func parseCandidates(reply string, threshold float64, max int) []orchestrator.Candidate {
+func parseCandidates(reply string, threshold float64, limit int) []orchestrator.Candidate {
 	raws := candidateArray(reply)
 	n := len(raws)
-	if max > 0 && max < n {
-		n = max
+	if limit > 0 && limit < n {
+		n = limit
 	}
 	out := make([]orchestrator.Candidate, 0, n)
 	for i := range raws {
@@ -47,7 +47,7 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 			continue
 		}
 		out = append(out, orchestrator.Candidate{Node: toNode(*r, title), Private: r.Private})
-		if max > 0 && len(out) >= max {
+		if limit > 0 && len(out) >= limit {
 			break
 		}
 	}
@@ -114,24 +114,26 @@ func toNode(r rawCandidate, title string) contracts.Node {
 	}
 }
 
-var allowedKinds = map[contracts.NodeKind]bool{
-	contracts.KindOrganization: true,
-	contracts.KindProject:      true,
-	contracts.KindRepo:         true,
-	contracts.KindServer:       true,
-	contracts.KindArchitecture: true,
-	contracts.KindProduction:   true,
-	contracts.KindDecision:     true,
-	contracts.KindUser:         true,
-	contracts.KindAgent:        true,
-	contracts.KindDomain:       true,
-	contracts.KindSession:      false,
-	contracts.KindTranscript:   false,
+func allowedKinds() map[contracts.NodeKind]bool {
+	return map[contracts.NodeKind]bool{
+		contracts.KindOrganization: true,
+		contracts.KindProject:      true,
+		contracts.KindRepo:         true,
+		contracts.KindServer:       true,
+		contracts.KindArchitecture: true,
+		contracts.KindProduction:   true,
+		contracts.KindDecision:     true,
+		contracts.KindUser:         true,
+		contracts.KindAgent:        true,
+		contracts.KindDomain:       true,
+		contracts.KindSession:      false,
+		contracts.KindTranscript:   false,
+	}
 }
 
 func mapKind(s string) contracts.NodeKind {
 	k := contracts.NodeKind(strings.ToLower(strings.TrimSpace(s)))
-	if allowedKinds[k] {
+	if allowedKinds()[k] {
 		return k
 	}
 	return contracts.KindSession
