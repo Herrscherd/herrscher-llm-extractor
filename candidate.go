@@ -3,7 +3,7 @@ package llmextractor
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
+	"slices"
 	"strings"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -114,26 +114,24 @@ func toNode(raw rawCandidate, title string) contracts.Node {
 	}
 }
 
-func allowedKinds() map[contracts.NodeKind]bool {
-	return map[contracts.NodeKind]bool{
-		contracts.KindOrganization: true,
-		contracts.KindProject:      true,
-		contracts.KindRepo:         true,
-		contracts.KindServer:       true,
-		contracts.KindArchitecture: true,
-		contracts.KindProduction:   true,
-		contracts.KindDecision:     true,
-		contracts.KindUser:         true,
-		contracts.KindAgent:        true,
-		contracts.KindDomain:       true,
-		contracts.KindSession:      false,
-		contracts.KindTranscript:   false,
+func allowedKinds() []contracts.NodeKind {
+	return []contracts.NodeKind{
+		contracts.KindOrganization,
+		contracts.KindProject,
+		contracts.KindRepo,
+		contracts.KindServer,
+		contracts.KindArchitecture,
+		contracts.KindProduction,
+		contracts.KindDecision,
+		contracts.KindUser,
+		contracts.KindAgent,
+		contracts.KindDomain,
 	}
 }
 
 func mapKind(s string) contracts.NodeKind {
 	kind := contracts.NodeKind(strings.ToLower(strings.TrimSpace(s)))
-	if allowedKinds()[kind] {
+	if slices.Contains(allowedKinds(), kind) {
 		return kind
 	}
 	return contracts.KindSession
@@ -147,13 +145,25 @@ func stableKey(kind contracts.NodeKind, title string, private bool) string {
 	return prefix + "/" + slugOrHash(title)
 }
 
+const (
+	fnvOffset32 uint32 = 2166136261
+	fnvPrime32  uint32 = 16777619
+)
+
 func slugOrHash(title string) string {
 	if s := slug(title); s != "" {
 		return s
 	}
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(strings.ToLower(title)))
-	return fmt.Sprintf("n%08x", hasher.Sum32())
+	return fmt.Sprintf("n%08x", fnv32a(strings.ToLower(title)))
+}
+
+func fnv32a(text string) uint32 {
+	sum := fnvOffset32
+	for index := range len(text) {
+		sum ^= uint32(text[index])
+		sum *= fnvPrime32
+	}
+	return sum
 }
 
 func slug(text string) string {

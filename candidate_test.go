@@ -158,6 +158,22 @@ func TestMapKind_UnknownFallsBackToSession(t *testing.T) {
 	if mapKind("wibble") != contracts.KindSession {
 		t.Fatal("unknown kind should fall back to session")
 	}
+	if mapKind(" Transcript ") != contracts.KindSession {
+		t.Fatal("transcript is not a curated kind and should fall back to session")
+	}
+}
+
+func TestSlugOrHash_PinnedKeysForNonSluggableTitles(t *testing.T) {
+	cases := map[string]string{
+		"!!!":  "n2d53a722",
+		"日本語":  "n805f5ce7",
+		"決定事項": "nfd76a7e4",
+	}
+	for title, want := range cases {
+		if got := slugOrHash(title); got != want {
+			t.Fatalf("slugOrHash(%q): want %q, got %q", title, want, got)
+		}
+	}
 }
 
 func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
