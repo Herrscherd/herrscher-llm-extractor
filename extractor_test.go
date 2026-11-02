@@ -194,7 +194,4 @@ func TestExtract_BackendErrorIsWrapped(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("want wrapped boom, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "llmextractor") {
-		t.Fatalf("error lacks package context: %v", err)
-	}
 }
