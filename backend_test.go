@@ -2,9 +2,10 @@ package llmextractor
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 func TestCurationEnv_OverridesModelKeysOnly(t *testing.T) {
@@ -64,15 +65,15 @@ func TestBackendFrom_BuildsFirstBackendPlugin(t *testing.T) {
 
 func TestBackendFrom_NoBackendRegisteredIsNoOp(t *testing.T) {
 	b, err := backendFrom(context.Background(), nil, curationEnv(func(string) string { return "" }))
-	if b != nil || err != nil {
-		t.Fatalf("want (nil,nil), got (%v,%v)", b, err)
+	if b != nil || !errors.Is(err, errNoBackend) {
+		t.Fatalf("want (nil,errNoBackend), got (%v,%v)", b, err)
 	}
 }
 
 func TestBackendFrom_SkipsPluginsWithoutBackendFactory(t *testing.T) {
 	built := &fakeBackend{}
 	plugins := []contracts.Plugin{
-		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}}, // no Backend factory
+		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}},
 		{Manifest: contracts.Manifest{Category: contracts.CategoryBackend}, Backend: func(_ context.Context, _ contracts.PluginConfig) (contracts.Backend, error) {
 			return built, nil
 		}},
@@ -91,7 +92,7 @@ func TestBackendFrom_ResolveErrorPropagates(t *testing.T) {
 			return &fakeBackend{}, nil
 		}},
 	}
-	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" }) // required env unset → Resolve error
+	b, err := backendFrom(context.Background(), plugins, func(string) string { return "" })
 	if err == nil || b != nil {
 		t.Fatalf("want (nil, error) on unresolved required setting, got (%v,%v)", b, err)
 	}

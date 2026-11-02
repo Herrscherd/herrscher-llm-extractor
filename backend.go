@@ -2,17 +2,13 @@ package llmextractor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// curationEnv wraps a base getenv so any model key resolves to
-// HERRSCHER_CURATION_MODEL when that override is set — letting curation run on a
-// cheaper/faster model than the conversation backend. Every other key passes
-// through unchanged. A model key is any env var whose name ends in "MODEL"
-// (e.g. CLAUDE_MODEL), matching how backends name their model setting.
 func curationEnv(base func(string) string) func(string) string {
 	override := base("HERRSCHER_CURATION_MODEL")
 	return func(key string) string {
@@ -23,27 +19,22 @@ func curationEnv(base func(string) string) func(string) string {
 	}
 }
 
-// backendFrom builds the first backend plugin in plugins from its resolved env
-// config, mirroring the host's firstBackend (Resolve(manifest.Config, getenv) →
-// factory). Returns (nil, nil) when no backend plugin is registered, so curation
-// degrades to a clean no-op and recall keeps working.
+var errNoBackend = errors.New("no curation backend registered")
+
 func backendFrom(ctx context.Context, plugins []contracts.Plugin, getenv func(string) string) (contracts.Backend, error) {
-	for _, p := range plugins {
-		if p.Backend == nil {
+	for _, plugin := range plugins {
+		if plugin.Backend == nil {
 			continue
 		}
-		cfg, err := contracts.Resolve(p.Manifest.Config, getenv)
+		cfg, err := contracts.Resolve(plugin.Manifest.Config, getenv)
 		if err != nil {
 			return nil, err
 		}
-		return p.Backend(ctx, cfg)
+		return plugin.Backend(ctx, cfg)
 	}
-	return nil, nil
+	return nil, errNoBackend
 }
 
-// lazyBackend builds a curation backend from the global plugin registry using a
-// model-overriding view of the process environment. Used by the registered
-// default extractor on first Extract.
 func lazyBackend(ctx context.Context) (contracts.Backend, error) {
 	return backendFrom(ctx, contracts.Default.Backends(), curationEnv(os.Getenv))
 }

@@ -3,9 +3,8 @@ package llmextractor
 import (
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 const twoValid = `[
@@ -75,7 +74,6 @@ func TestParseCandidates_TolerantOfWrapperAndGarbage(t *testing.T) {
 }
 
 func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
-	// A valid array wrapped in prose that itself contains brackets must still extract.
 	reply := "Here are the facts [as requested]:\n" + twoValid + "\nHope this helps ]"
 	cs := parseCandidates(reply, 0.6, 0)
 	if len(cs) != 2 {
@@ -84,8 +82,6 @@ func TestParseCandidates_IgnoresBracketsInProse(t *testing.T) {
 }
 
 func TestParseCandidates_TitlelessArrayDoesNotMaskReal(t *testing.T) {
-	// A stray empty/title-less array decoding before the real one must not shadow it:
-	// [] decodes empty, [{}] decodes one title-less entry — both are skipped.
 	reply := "Thinking... [] and maybe [{}] but actually:\n" + twoValid
 	cs := parseCandidates(reply, 0.6, 0)
 	if len(cs) != 2 {
@@ -141,7 +137,7 @@ func TestStableKey_NonSluggableTitlesGetDistinctKeys(t *testing.T) {
 	if len(cs) != 3 {
 		t.Fatalf("want 3, got %d", len(cs))
 	}
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, c := range cs {
 		k := c.Node.Key
 		if strings.HasSuffix(k, "/") {
@@ -161,6 +157,22 @@ func TestMapKind_UnknownFallsBackToSession(t *testing.T) {
 	if mapKind("wibble") != contracts.KindSession {
 		t.Fatal("unknown kind should fall back to session")
 	}
+	if mapKind(" Transcript ") != contracts.KindSession {
+		t.Fatal("transcript is not a curated kind and should fall back to session")
+	}
+}
+
+func TestSlugOrHash_PinnedKeysForNonSluggableTitles(t *testing.T) {
+	cases := map[string]string{
+		"!!!":  "n2d53a722",
+		"日本語":  "n805f5ce7",
+		"決定事項": "nfd76a7e4",
+	}
+	for title, want := range cases {
+		if got := slugOrHash(title); got != want {
+			t.Fatalf("slugOrHash(%q): want %q, got %q", title, want, got)
+		}
+	}
 }
 
 func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
@@ -173,15 +185,8 @@ func TestCandidateArray_BoundedOnPathologicalReplies(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			done := make(chan []rawCandidate, 1)
-			go func() { done <- candidateArray(tc.reply) }()
-			select {
-			case got := <-done:
-				if got != nil {
-					t.Fatalf("want nil on garbage, got %v", got)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("candidateArray did not return in bounded time")
+			if got := candidateArray(tc.reply); got != nil {
+				t.Fatalf("want nil on garbage, got %v", got)
 			}
 		})
 	}

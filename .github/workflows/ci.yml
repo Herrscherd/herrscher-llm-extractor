@@ -1,56 +1,21 @@
-name: ci
+name: CI
+
 on:
   push:
     branches: [master]
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  book:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.27.3'
+          go-version-file: go.mod
           cache: true
-
-      # This plugin depends on herrscher-contracts and herrscher-orchestrator. A
-      # PR often rides on unpublished sibling commits, so build against the
-      # matching refs via go.work: each sibling's branch of the same name when it
-      # exists, else its default. Falls back to the pinned go.mod versions.
-      - name: Check out herrscher-contracts
-        uses: actions/checkout@v7
-        with:
-          repository: Herrscherd/herrscher-contracts
-          ref: ${{ github.head_ref }}
-          path: _deps/herrscher-contracts
-          token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
-        continue-on-error: true
-
-      - name: Check out herrscher-orchestrator
-        uses: actions/checkout@v7
-        with:
-          repository: Herrscherd/herrscher-orchestrator
-          ref: ${{ github.head_ref }}
-          path: _deps/herrscher-orchestrator
-          token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
-        continue-on-error: true
-
-      - name: Use local siblings when present
-        run: |
-          mods=(.)
-          [ -d _deps/herrscher-contracts ] && mods+=(_deps/herrscher-contracts)
-          [ -d _deps/herrscher-orchestrator ] && mods+=(_deps/herrscher-orchestrator)
-          if [ ${#mods[@]} -gt 1 ]; then
-            go work init "${mods[@]}"
-          fi
-
-      # Own sources only: _deps holds checked-out siblings, whose formatting is
-      # their own repos' business — a sibling's stray file must not redden this.
-      - name: gofmt
-        run: |
-          bad="$(gofmt -l . | grep -v '^_deps/' || true)"
-          [ -z "$bad" ] || { echo "$bad"; exit 1; }
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test -race ./...
+      - name: Quality chain of the go-book
+        run: scripts/check.sh
