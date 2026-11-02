@@ -79,7 +79,10 @@ func TestOptions_ThresholdAndMax(t *testing.T) {
 	if e.threshold != 0.85 || e.max != 5 {
 		t.Fatalf("options not applied: %v %v", e.threshold, e.max)
 	}
-	cs, _ := e.Extract(context.Background(), "j", "t")
+	cs, err := e.Extract(context.Background(), "j", "t")
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
 	if len(cs) != 1 {
 		t.Fatalf("threshold via Extract: want 1, got %d", len(cs))
 	}
