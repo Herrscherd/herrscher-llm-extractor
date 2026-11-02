@@ -116,6 +116,8 @@ func TestExtract_LazyBackendBuildFailure(t *testing.T) {
 		{name: "permanent error is memorised and reported", err: buildErr, callerCtx: context.Background, wantCalls: 1, wantReport: true},
 		{name: "cancellation is retried and not reported", err: context.Canceled, callerCtx: cancelledContext, wantCalls: 2, wantReport: false},
 		{name: "deadline is retried and not reported", err: context.DeadlineExceeded, callerCtx: expiredContext, wantCalls: 2, wantReport: false},
+		{name: "wrapped deadline with a live caller context is retried and not reported", err: fmt.Errorf("plugin handshake: %w", context.DeadlineExceeded), callerCtx: context.Background, wantCalls: 2, wantReport: false},
+		{name: "wrapped cancellation with a live caller context is retried and not reported", err: fmt.Errorf("plugin handshake: %w", context.Canceled), callerCtx: context.Background, wantCalls: 2, wantReport: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,32 +138,32 @@ func expiredContext() context.Context {
 	return ctx
 }
 
-func TestExtract_BuildErrorWrappingDeadlineWithLiveContextIsMemorised(t *testing.T) {
+func TestExtract_BuildErrorWrappingDeadlineWithLiveContextIsRebuilt(t *testing.T) {
 	buildErr := fmt.Errorf("plugin handshake: %w", context.DeadlineExceeded)
 	calls := 0
 	e := &LLMExtractor{
 		newBackend: func(context.Context) (contracts.Backend, error) {
 			calls++
-			return nil, buildErr
+			if calls == 1 {
+				return nil, buildErr
+			}
+			return &fakeBackend{reply: twoValid}, nil
 		},
 		threshold: defaultThreshold,
 		max:       defaultMax,
 	}
-	for range 2 {
-		cs, err := e.Extract(context.Background(), "j", "t")
-		if err != nil || cs != nil {
-			t.Fatalf("want clean no-op, got (%v,%v)", cs, err)
-		}
+	if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || cs != nil {
+		t.Fatalf("first Extract: want clean no-op, got (%v,%v)", cs, err)
 	}
-	if calls != 1 {
-		t.Fatalf("newBackend calls: want 1 (memorised despite the deadline error), got %d", calls)
+	cs, err := e.Extract(context.Background(), "j", "t")
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("second Extract: want a rebuilt backend and 2 candidates, got (%v,%v)", cs, err)
 	}
-	got := e.BackendErr()
-	if !errors.Is(got, buildErr) {
-		t.Fatalf("BackendErr: want wrapping %v, got %v", buildErr, got)
+	if calls != 2 {
+		t.Fatalf("newBackend calls: want 2 (deadline error not memorised), got %d", calls)
 	}
-	if !errors.Is(got, context.DeadlineExceeded) {
-		t.Fatalf("BackendErr: want the deadline reachable through errors.Is, got %v", got)
+	if err := e.BackendErr(); err != nil {
+		t.Fatalf("BackendErr after an interrupted build: want nil, got %v", err)
 	}
 }
 
@@ -285,46 +287,46 @@ func TestExtract_ConcurrentCallersBuildBackendOnce(t *testing.T) {
 }
 
 func TestExtract_WaiterTakesOverWhenBuilderIsCancelled(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		builderCtx, cancelBuilder := context.WithCancel(context.Background())
-		defer cancelBuilder()
-		var calls atomic.Int32
-		e := &LLMExtractor{
-			newBackend: func(ctx context.Context) (contracts.Backend, error) {
-				if calls.Add(1) == 1 {
-					<-ctx.Done()
-					return nil, ctx.Err()
-				}
-				return &fakeBackend{reply: twoValid}, nil
-			},
-			threshold: defaultThreshold,
-			max:       defaultMax,
-		}
-		var builder sync.WaitGroup
-		builder.Go(func() {
-			if cs, err := e.Extract(builderCtx, "j", "t"); err != nil || cs != nil {
-				t.Errorf("cancelled builder: want (nil,nil), got (%v,%v)", cs, err)
+	var calls atomic.Int32
+	entered := make(chan struct{}, 1)
+	e := &LLMExtractor{
+		newBackend: func(ctx context.Context) (contracts.Backend, error) {
+			if calls.Add(1) == 1 {
+				entered <- struct{}{}
+				<-ctx.Done()
+				return nil, ctx.Err()
 			}
-		})
-		synctest.Wait()
-
-		var waiter sync.WaitGroup
-		waiter.Go(func() {
-			if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
-				t.Errorf("waiter: want 2 candidates after takeover, got (%v,%v)", cs, err)
-			}
-		})
-		synctest.Wait()
-		cancelBuilder()
-		builder.Wait()
-		waiter.Wait()
-		if got := calls.Load(); got != 2 {
-			t.Fatalf("newBackend calls: want 2 (cancelled builder, then waiter), got %d", got)
-		}
-		if err := e.BackendErr(); err != nil {
-			t.Fatalf("BackendErr after a cancelled build: want nil, got %v", err)
+			return &fakeBackend{reply: twoValid}, nil
+		},
+		threshold: defaultThreshold,
+		max:       defaultMax,
+	}
+	builderCtx, cancelBuilder := context.WithCancel(context.Background())
+	defer cancelBuilder()
+	var builder sync.WaitGroup
+	builder.Go(func() {
+		if cs, err := e.Extract(builderCtx, "j", "t"); err != nil || cs != nil {
+			t.Errorf("cancelled builder: want (nil,nil), got (%v,%v)", cs, err)
 		}
 	})
+	awaitWithin(t, entered, "the backend build never started")
+
+	var waiter sync.WaitGroup
+	waiter.Go(func() {
+		if cs, err := e.Extract(context.Background(), "j", "t"); err != nil || len(cs) != 2 {
+			t.Errorf("waiter: want 2 candidates after takeover, got (%v,%v)", cs, err)
+		}
+	})
+	time.Sleep(10 * time.Millisecond)
+	cancelBuilder()
+	awaitWithin(t, allDone(&builder), "the cancelled builder stayed blocked")
+	awaitWithin(t, allDone(&waiter), "the waiter did not take over the cancelled build")
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("newBackend calls: want 2 (cancelled builder, then waiter), got %d", got)
+	}
+	if err := e.BackendErr(); err != nil {
+		t.Fatalf("BackendErr after a cancelled build: want nil, got %v", err)
+	}
 }
 
 func TestExtract_PanickingBuildIsRetried(t *testing.T) {

@@ -59,10 +59,12 @@ func New(backend contracts.Backend, opts ...Option) *LLMExtractor {
 // call, wrapped with %w, so errors.Is and errors.As reach the backend's own
 // error. The package defines no sentinel for Extract.
 //
-// A lazy backend build that fails while the context of its Extract call is still
-// live is memorised: no later Extract builds again, BackendErr reports the
-// failure, and Extract stays a no-op. A build that fails once that context is done
-// is an interruption, whatever error the factory returned: it is not memorised,
+// A lazy backend build that fails with an error other than a context error
+// (errors.Is reports neither context.Canceled nor context.DeadlineExceeded) is
+// memorised while the context of its Extract call is still live: no later Extract
+// builds again, BackendErr reports the failure, and Extract stays a no-op. A build
+// that fails with a context error, or fails once the context of its Extract call
+// is done, is an interruption: it is not memorised, BackendErr does not report it,
 // and the next Extract builds again. A build that panics is not memorised either:
 // the panic reaches the Extract call that started the build, and the next Extract
 // builds again.
@@ -149,7 +151,7 @@ func (e *LLMExtractor) settle(ctx context.Context, done chan struct{}, backend c
 	e.building = nil
 	close(done)
 	switch {
-	case err != nil && ctx.Err() != nil:
+	case err != nil && (ctx.Err() != nil || isContextError(err)):
 		return nil
 	case err != nil:
 		e.backendErr, e.built = err, true
@@ -157,4 +159,8 @@ func (e *LLMExtractor) settle(ctx context.Context, done chan struct{}, backend c
 	}
 	e.backend, e.built = backend, true
 	return backend
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
