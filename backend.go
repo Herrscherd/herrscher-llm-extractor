@@ -2,6 +2,7 @@ package llmextractor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -18,6 +19,8 @@ func curationEnv(base func(string) string) func(string) string {
 	}
 }
 
+var errNoBackend = errors.New("no curation backend registered")
+
 func backendFrom(ctx context.Context, plugins []contracts.Plugin, getenv func(string) string) (contracts.Backend, error) {
 	for _, p := range plugins {
 		if p.Backend == nil {
@@ -29,7 +32,7 @@ func backendFrom(ctx context.Context, plugins []contracts.Plugin, getenv func(st
 		}
 		return p.Backend(ctx, cfg)
 	}
-	return nil, nil
+	return nil, errNoBackend
 }
 
 func lazyBackend(ctx context.Context) (contracts.Backend, error) {

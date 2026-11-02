@@ -40,12 +40,13 @@ func parseCandidates(reply string, threshold float64, max int) []orchestrator.Ca
 		n = max
 	}
 	out := make([]orchestrator.Candidate, 0, n)
-	for _, r := range raws {
+	for i := range raws {
+		r := &raws[i]
 		title := strings.TrimSpace(r.Title)
 		if title == "" || r.Confidence < threshold {
 			continue
 		}
-		out = append(out, orchestrator.Candidate{Node: toNode(r, title), Private: r.Private})
+		out = append(out, orchestrator.Candidate{Node: toNode(*r, title), Private: r.Private})
 		if max > 0 && len(out) >= max {
 			break
 		}
@@ -61,7 +62,7 @@ func candidateArray(reply string) []rawCandidate {
 		reply = reply[:maxCandidateScan]
 	}
 	attempts := 0
-	for i := 0; i < len(reply); i++ {
+	for i := range len(reply) {
 		if reply[i] != '[' {
 			continue
 		}
@@ -73,8 +74,8 @@ func candidateArray(reply string) []rawCandidate {
 		if err := json.NewDecoder(strings.NewReader(reply[i:])).Decode(&raws); err != nil {
 			continue
 		}
-		for _, r := range raws {
-			if strings.TrimSpace(r.Title) != "" {
+		for i := range raws {
+			if strings.TrimSpace(raws[i].Title) != "" {
 				return raws
 			}
 		}
@@ -124,6 +125,8 @@ var allowedKinds = map[contracts.NodeKind]bool{
 	contracts.KindUser:         true,
 	contracts.KindAgent:        true,
 	contracts.KindDomain:       true,
+	contracts.KindSession:      false,
+	contracts.KindTranscript:   false,
 }
 
 func mapKind(s string) contracts.NodeKind {

@@ -86,6 +86,9 @@ func (e *LLMExtractor) resolveBackend(ctx context.Context) contracts.Backend {
 		return e.backend
 	}
 	b, err := e.newBackend(ctx)
+	if errors.Is(err, errNoBackend) {
+		err = nil
+	}
 	e.backendErr = err
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

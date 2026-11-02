@@ -2,6 +2,7 @@ package llmextractor
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -64,8 +65,8 @@ func TestBackendFrom_BuildsFirstBackendPlugin(t *testing.T) {
 
 func TestBackendFrom_NoBackendRegisteredIsNoOp(t *testing.T) {
 	b, err := backendFrom(context.Background(), nil, curationEnv(func(string) string { return "" }))
-	if b != nil || err != nil {
-		t.Fatalf("want (nil,nil), got (%v,%v)", b, err)
+	if b != nil || !errors.Is(err, errNoBackend) {
+		t.Fatalf("want (nil,errNoBackend), got (%v,%v)", b, err)
 	}
 }
 
