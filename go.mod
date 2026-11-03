@@ -5,6 +5,6 @@ go 1.27.0
 toolchain go1.27.3
 
 require (
-	github.com/Herrscherd/herrscher-contracts v0.2.13
-	github.com/Herrscherd/herrscher-orchestrator v0.1.4
+	github.com/Herrscherd/herrscher-contracts v0.12.0
+	github.com/Herrscherd/herrscher-orchestrator v0.4.0
 )
