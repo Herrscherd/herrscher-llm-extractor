@@ -1,4 +1,4 @@
-github.com/Herrscherd/herrscher-contracts v0.2.13 h1:ivPj30k3sqANuS+aTwK17AtWV5nBZyWHdL3MJXIjwcg=
-github.com/Herrscherd/herrscher-contracts v0.2.13/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
-github.com/Herrscherd/herrscher-orchestrator v0.1.4 h1:S0re6g7UxdCKY515oYjqSx1M+IuLyPpRAI0vlVg6pv4=
-github.com/Herrscherd/herrscher-orchestrator v0.1.4/go.mod h1:apnaYEev+VzVAcVPzET5OCIAYtzIanO77NOidpCBVHo=
+github.com/Herrscherd/herrscher-contracts v0.12.0 h1:KXQFrYG9F6sFm8Kdtfe+GH0IK3K4ZX4KtrEZF5GHu5E=
+github.com/Herrscherd/herrscher-contracts v0.12.0/go.mod h1:qUrFuSXT/wSplqrDeThJWJcXMzUpXYv02PraP5nppN8=
+github.com/Herrscherd/herrscher-orchestrator v0.4.0 h1:5IrIs78QD8w5HFOw7Dr/kfNHNURf0X0r9+x7AIPIz9w=
+github.com/Herrscherd/herrscher-orchestrator v0.4.0/go.mod h1:FnRImQre+Yp3uaPR6fBj5quLF13qHnJIn2KqYW3+33s=
